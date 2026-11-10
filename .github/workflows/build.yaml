@@ -33,7 +33,7 @@ jobs:
       - name: Test and build
         run: |
           set -o pipefail
-          ./gradlew testDebugUnitTest assembleDebug 2>&1 | tee "$RUNNER_TEMP/build.log" || {
+          ./gradlew testDebugUnitTest assembleDebug assembleDebugAndroidTest 2>&1 | tee "$RUNNER_TEMP/build.log" || {
             message=$(tail -n 40 "$RUNNER_TEMP/build.log")
             message="${message//'%'/'%25'}"
             message="${message//$'\n'/'%0A'}"
@@ -69,13 +69,30 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -eu
-          test -n "$KEYSTORE_BASE64" && test -n "$KEYSTORE_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
-          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+          trap 'rm -f "$RUNNER_TEMP/release.keystore"' EXIT
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo '::error::Missing Android signing secrets. See README for setup.'
+            exit 1
+          fi
+          if ! printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"; then
+            echo '::error::ANDROID_KEYSTORE_BASE64 is not valid base64. Encode the binary keystore exactly once.'
+            exit 1
+          fi
+          if ! LC_ALL=C keytool -list -v -keystore "$RUNNER_TEMP/release.keystore" -storepass:env KEYSTORE_PASSWORD -alias "$KEY_ALIAS" > "$RUNNER_TEMP/keytool-output.txt" 2>&1; then
+            echo '::error::Cannot open the decoded keystore or alias. Check the binary keystore, store password, and alias; see README. Do not paste secrets in logs.'
+            rm -f "$RUNNER_TEMP/keytool-output.txt"
+            exit 1
+          fi
+          if ! grep -q 'Entry type: PrivateKeyEntry' "$RUNNER_TEMP/keytool-output.txt"; then
+            echo '::error::The signing alias is not a PrivateKeyEntry.'
+            rm -f "$RUNNER_TEMP/keytool-output.txt"
+            exit 1
+          fi
+          rm -f "$RUNNER_TEMP/keytool-output.txt"
           BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           "$BUILD_TOOLS/zipalign" -f -p 4 app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
           "$BUILD_TOOLS/apksigner" sign --ks "$RUNNER_TEMP/release.keystore" --ks-key-alias "$KEY_ALIAS" --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD --out open-sstp-release.apk "$RUNNER_TEMP/aligned.apk"
           "$BUILD_TOOLS/apksigner" verify open-sstp-release.apk
-          rm -f "$RUNNER_TEMP/release.keystore"
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

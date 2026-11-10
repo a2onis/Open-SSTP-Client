@@ -150,8 +150,9 @@ internal class ProfilesFragment : PreferenceFragmentCompat() {
 
     private fun actions(key: String, profile: Profile) {
         AlertDialog.Builder(requireContext())
+            // AlertDialog shows either a message or a list, not both. A message here
+            // hides the actions on AppCompat, making it impossible to apply a profile.
             .setTitle(key.removePrefix(PROFILE_KEY_HEADER))
-            .setMessage(summarizeProfile(profile))
             .setItems(arrayOf("Apply as primary", "Edit", "Test connection", "Delete")) { _, which ->
                 when (which) {
                     0 -> {

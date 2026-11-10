@@ -129,3 +129,28 @@ This is a TCP connect time (including name resolution), not nmap's ICMP latency,
 and it does not establish that SSTP or credentials work. Results depend on your
 network and are not a throughput measurement. Only test endpoints you are
 authorized to contact. The VPN must be disconnected before applying a profile.
+
+### Troubleshooting release signing
+
+`ANDROID_KEYSTORE_BASE64` must contain the base64 encoding of the **binary**
+JKS or PKCS#12 keystore containing your Android signing private key, not a
+password, certificate, PEM file, path, or an already-base64-encoded file. For
+example, on Linux, `base64 -w 0 /path/to/release.keystore` produces the value
+to put in the repository's Actions secret. On macOS, use
+`base64 -i /path/to/release.keystore | tr -d '\n'`. Encode the original binary
+file exactly once. Never commit the keystore or put secret values in logs or
+chat. Keep a secure backup of the keystore.
+
+Before configuring Actions, verify the original file and alias locally with
+`keytool -list -v -keystore /path/to/release.keystore -alias YOUR_ALIAS`.
+Enter the store password interactively; the alias must be a `PrivateKeyEntry`.
+Set the other secrets to the matching store password, alias and private-key
+password. PKCS#12 typically uses the same password for the store and key.
+`Tag number over 30 is not supported` often indicates that the decoded data is
+not a valid keystore (for example, it was encoded twice); a wrong password or
+alias can also prevent signing. Don't replace an existing signing key for an
+already-installed release: Android updates require the original key.
+
+The workflow in a tag is fixed to that tagged commit. After fixing secrets,
+rerun the failed job for that tag; to include later code fixes, create a new
+`v*` tag pointing at the updated commit instead.
