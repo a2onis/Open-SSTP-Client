@@ -12,6 +12,7 @@ import kittoku.osc.preference.accessor.setIntPrefValue
 import kittoku.osc.preference.accessor.setSetPrefValue
 import kittoku.osc.preference.accessor.setStringPrefValue
 import kittoku.osc.preference.accessor.setURIPrefValue
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
