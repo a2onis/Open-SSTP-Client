@@ -115,7 +115,7 @@ internal class FinderFragment : PreferenceFragmentCompat() {
                     url.protocol.equals("https", true) && url.host.isNotBlank() && url.userInfo == null
                 } catch (_: Exception) { false }
                 if (!valid) input.error = "Enter an HTTPS URL without credentials" else {
-                    saveSources((sources() - old) + text)
+                    saveSources((if (old == null) sources() else sources() - old) + text)
                     results = emptyList(); status = "Sources changed; compare again"; refresh()
                     dialog.dismiss()
                 }
