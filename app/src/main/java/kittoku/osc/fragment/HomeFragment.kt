@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts.StartActivityFo
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import kittoku.osc.R
+import kittoku.osc.activity.MainActivity
 import kittoku.osc.preference.OscPrefKey
 import kittoku.osc.preference.checkPreferences
 import kittoku.osc.preference.custom.HomeConnectorPreference
@@ -28,6 +29,17 @@ class HomeFragment : PreferenceFragmentCompat() {
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.home, rootKey)
+        findPreference<Preference>("manage_configurations")?.setOnPreferenceClickListener {
+            (requireActivity() as MainActivity).openConfigurations()
+            true
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val name = preferenceManager.sharedPreferences?.getString("active_profile_name", null)
+        findPreference<Preference>("manage_configurations")?.summary = if (name == null)
+            "Select, manage, and find configurations" else "Last applied: $name · tap to manage"
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

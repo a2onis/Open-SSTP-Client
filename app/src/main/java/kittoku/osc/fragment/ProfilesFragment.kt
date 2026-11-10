@@ -2,6 +2,7 @@ package kittoku.osc.fragment
 
 import android.app.Activity
 import android.content.SharedPreferences
+import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -15,6 +16,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import kittoku.osc.R
+import kittoku.osc.activity.BlankActivity
+import kittoku.osc.activity.EXTRA_KEY_TYPE
+import kittoku.osc.activity.BLANK_ACTIVITY_TYPE_FINDER
 import kittoku.osc.extension.removeTemporaryPreferences
 import kittoku.osc.preference.*
 import kotlinx.serialization.json.Json
@@ -28,6 +32,12 @@ internal class ProfilesFragment : PreferenceFragmentCompat() {
     private val executor = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private val results = mutableMapOf<String, String>()
+    private val finderLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            requireActivity().setResult(Activity.RESULT_OK)
+            requireActivity().finish()
+        } else if (isAdded) refresh()
+    }
     private val importList = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             val resolver = requireContext().contentResolver
@@ -79,6 +89,14 @@ internal class ProfilesFragment : PreferenceFragmentCompat() {
             title = "Import endpoint list"
             summary = "Choose a text file; nothing is tested automatically"
             setOnPreferenceClickListener { importList.launch(arrayOf("text/*", "application/octet-stream")); true }
+        })
+        preferenceScreen.addPreference(Preference(requireContext()).apply {
+            title = "Find fastest from sources"
+            summary = "Manage list URLs and compare TCP connection times"
+            setOnPreferenceClickListener {
+                finderLauncher.launch(Intent(requireContext(), BlankActivity::class.java).putExtra(EXTRA_KEY_TYPE, BLANK_ACTIVITY_TYPE_FINDER))
+                true
+            }
         })
         val entries = prefs.all.filterKeys { it.startsWith(PROFILE_KEY_HEADER) }.toSortedMap()
         if (entries.isEmpty()) {
@@ -134,10 +152,15 @@ internal class ProfilesFragment : PreferenceFragmentCompat() {
         AlertDialog.Builder(requireContext())
             .setTitle(key.removePrefix(PROFILE_KEY_HEADER))
             .setMessage(summarizeProfile(profile))
-            .setItems(arrayOf("Load", "Edit", "Test connection", "Delete")) { _, which ->
+            .setItems(arrayOf("Apply as primary", "Edit", "Test connection", "Delete")) { _, which ->
                 when (which) {
                     0 -> {
+                        if (prefs.getBoolean(OscPrefKey.ROOT_STATE.name, false) || prefs.getBoolean(OscPrefKey.HOME_CONNECTOR.name, false)) {
+                            Toast.makeText(requireContext(), "Disconnect the VPN before applying a configuration", Toast.LENGTH_LONG).show()
+                            return@setItems
+                        }
                         importProfile(profile, prefs)
+                        prefs.edit().putString("active_profile_name", key.removePrefix(PROFILE_KEY_HEADER)).apply()
                         requireActivity().setResult(Activity.RESULT_OK)
                         requireActivity().finish()
                     }

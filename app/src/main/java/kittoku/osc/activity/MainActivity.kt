@@ -87,8 +87,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    fun openConfigurations() {
+        profileLauncher.launch(Intent(this, BlankActivity::class.java).putExtra(EXTRA_KEY_TYPE, BLANK_ACTIVITY_TYPE_PROFILES))
+    }
+
     private fun updatePreferenceView() {
-        listOf(homeFragment, settingFragment).forEach { fragment ->
+        listOf(0 to homeFragment, 1 to settingFragment).forEach { (index, original) ->
+            val fragment = (supportFragmentManager.findFragmentByTag("f$index") as? PreferenceFragmentCompat) ?: original
             if (fragment.isAdded) {
                 val preferenceGroups = mutableListOf<PreferenceGroup>(fragment.preferenceScreen)
 
@@ -159,10 +164,7 @@ class MainActivity : AppCompatActivity() {
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
             R.id.load_profile -> {
-                profileLauncher.launch(Intent(this, BlankActivity::class.java).putExtra(
-                    EXTRA_KEY_TYPE,
-                    BLANK_ACTIVITY_TYPE_PROFILES
-                ))
+                openConfigurations()
             }
 
             R.id.save_profile -> showSaveDialog()

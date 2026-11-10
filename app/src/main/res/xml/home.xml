@@ -5,6 +5,9 @@
     <kittoku.osc.preference.custom.HomePasswordPreference android:key="HOME_PASSWORD"/>
     <kittoku.osc.preference.custom.HomeConnectorPreference android:key="HOME_CONNECTOR" />
 
+    <Preference android:key="manage_configurations" android:title="Configurations"
+        android:summary="Select, manage, and find configurations" />
+
     <PreferenceCategory>
         <kittoku.osc.preference.custom.HomeStatusPreference android:key="HOME_STATUS"/>
     </PreferenceCategory>

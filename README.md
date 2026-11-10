@@ -114,7 +114,18 @@ curl -fL 'https://raw.githubusercontent.com/F0rc3Run/F0rc3Run/refs/heads/main/ss
 curl -fL 'https://raw.githubusercontent.com/Delta-Kronecker/Vpn-Gate/refs/heads/main/sstp_hosts.txt' -o sstp-hosts.txt
 ```
 
-Importing does not contact any listed hosts. Choose a configuration and tap
-**Test connection** to measure one TCP connection. Unlike the shell script,
-this does not run nmap or naabu, automatically test a list, or rank servers;
-TCP timing also does not establish that SSTP or credentials work.
+Importing a file does not contact any listed hosts. To compare online lists,
+open **Configurations** on the home screen, choose **Find fastest from sources**,
+and tap **Compare sources**. The two lists above are preconfigured; you can add,
+edit, or remove HTTPS source URLs. After confirmation, the app downloads each
+list (maximum 1 MiB per source), deduplicates at most 1,000 endpoints, and
+attempts a TCP connection to each advertised port with bounded concurrency.
+Successful connections are sorted by elapsed time. Source errors are reported;
+if the combined endpoint limit is exceeded the comparison stops rather than
+silently ranking a subset. Choose a result to save or apply it as primary. New
+entries use default settings and no credentials; edit them before connecting.
+
+This is a TCP connect time (including name resolution), not nmap's ICMP latency,
+and it does not establish that SSTP or credentials work. Results depend on your
+network and are not a throughput measurement. Only test endpoints you are
+authorized to contact. The VPN must be disconnected before applying a profile.

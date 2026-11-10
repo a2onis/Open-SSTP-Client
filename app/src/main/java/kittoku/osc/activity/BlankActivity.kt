@@ -8,11 +8,13 @@ import kittoku.osc.databinding.ActivityBlankBinding
 import kittoku.osc.fragment.AppsFragment
 import kittoku.osc.fragment.ProfilesFragment
 import kittoku.osc.fragment.SaveCertFragment
+import kittoku.osc.fragment.FinderFragment
 
 
 internal const val BLANK_ACTIVITY_TYPE_PROFILES = 0
 internal const val BLANK_ACTIVITY_TYPE_APPS = 1
 internal const val BLANK_ACTIVITY_TYPE_SAVE_CERT = 2
+internal const val BLANK_ACTIVITY_TYPE_FINDER = 3
 
 internal const val EXTRA_KEY_TYPE = "TYPE"
 internal const val EXTRA_KEY_CERT = "CERT"
@@ -28,6 +30,11 @@ class BlankActivity : AppCompatActivity() {
             BLANK_ACTIVITY_TYPE_PROFILES -> {
                 title = "Profiles"
                 fragment = ProfilesFragment()
+            }
+
+            BLANK_ACTIVITY_TYPE_FINDER -> {
+                title = "Find configurations"
+                fragment = FinderFragment()
             }
 
             BLANK_ACTIVITY_TYPE_APPS -> {
@@ -46,7 +53,7 @@ class BlankActivity : AppCompatActivity() {
         binding.root.fitsSystemWindows = true
         setContentView(binding.root)
 
-        supportFragmentManager.beginTransaction().also {
+        if (savedInstanceState == null) supportFragmentManager.beginTransaction().also {
             it.replace(R.id.blank, fragment)
             it.commit()
         }
