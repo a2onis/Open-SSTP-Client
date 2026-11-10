@@ -13,6 +13,7 @@ import kittoku.osc.activity.MainActivity
 import kittoku.osc.preference.OscPrefKey
 import kittoku.osc.preference.PROFILE_KEY_HEADER
 import kittoku.osc.preference.Profile
+import kittoku.osc.preference.accessor.getIntPrefValue
 import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -44,7 +45,7 @@ class ProfileSelectionTest {
             onView(withText("vpn.example.org")).check(matches(isDisplayed()))
             assertEquals("vpn.example.org", prefs.getString(OscPrefKey.HOME_HOSTNAME.name, null))
             assertEquals("tester", prefs.getString(OscPrefKey.HOME_USERNAME.name, null))
-            assertEquals(8443, prefs.getInt(OscPrefKey.SSL_PORT.name, 0))
+            assertEquals(8443, getIntPrefValue(OscPrefKey.SSL_PORT, prefs))
             assertEquals("Test VPN", prefs.getString("active_profile_name", null))
         }
     }
