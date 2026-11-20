@@ -7,7 +7,7 @@ namespace OpenSstpWin.Interop;
 /// signed, redistributable layer-3 TUN driver for Windows used by WireGuard.
 /// wintun.dll must sit next to OpenSstpWin.exe (the release zip ships it).
 /// </summary>
-public sealed class WintunSession : IDisposable
+internal sealed class WintunSession : IDisposable
 {
     private const string Dll = "wintun.dll";
 

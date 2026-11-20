@@ -94,7 +94,7 @@ internal ref struct ByteReader
 }
 
 /// <summary>Simple big-endian growable writer.</summary>
-internal sealed class ByteWriter
+public sealed class ByteWriter
 {
     private readonly List<byte> _bytes = new(64);
 

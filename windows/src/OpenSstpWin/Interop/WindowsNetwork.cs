@@ -8,7 +8,8 @@ using System.Text;
 namespace OpenSstpWin.Interop;
 
 /// <summary>Where traffic for the VPN server itself must be sent.</summary>
-internal sealed record ServerRoute(uint InterfaceIndex, string NextHop, string ServerAddress);
+/// <summary>Where traffic for the VPN server itself must be sent.</summary>
+public sealed record ServerRoute(uint InterfaceIndex, string NextHop, string ServerAddress);
 
 /// <summary>
 /// Applies the tunnel's IP configuration with netsh.exe and the IP Helper API —
