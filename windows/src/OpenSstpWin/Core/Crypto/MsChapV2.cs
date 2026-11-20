@@ -94,16 +94,25 @@ public sealed class MsChapV2
         // chunks, give each odd parity, and encrypt one 8 byte challenge block.
         for (var i = 0; i < 3; i++)
         {
-            using var des = DES.Create();
-            des.Mode = CipherMode.ECB;
-            des.Padding = PaddingMode.None;
-            des.Key = AddParity(zeroPassHash.AsSpan(i * 7, 7));
-
-            using var encryptor = des.CreateEncryptor();
+            var key = AddParity(zeroPassHash.AsSpan(i * 7, 7));
             var block = challenge.AsSpan(i * 8, 8).ToArray();
-            var encrypted = encryptor.TransformFinalBlock(block, 0, block.Length);
+            var encrypted = DesEncryptBlock(key, block);
             encrypted.CopyTo(_clientResponse, i * 8);
         }
+    }
+
+    /// <summary>
+    /// Encrypts exactly one 8 byte block with single DES (ECB, no padding).
+    /// Keys are built explicitly so no provider rejects them for "weak" parity.
+    /// </summary>
+    private static byte[] DesEncryptBlock(byte[] key, byte[] block)
+    {
+        using var des = DES.Create();
+        des.Key = key;
+        des.Mode = CipherMode.ECB;
+        des.Padding = PaddingMode.None;
+        using var encryptor = des.CreateEncryptor(key, null);
+        return encryptor.TransformFinalBlock(block, 0, block.Length);
     }
 
     private static byte[] AddParity(ReadOnlySpan<byte> seven)
