@@ -204,17 +204,7 @@ public class ProtocolTests
         }
 
         var auth = new MsChapV2("user", "password");
-        byte[] response;
-        try
-        {
-            response = auth.ProcessChallenge(challenge);
-        }
-        catch (Exception exception)
-        {
-            var log = Path.Combine(Path.GetTempPath(), "mschapv2-des.log");
-            var detail = File.Exists(log) ? File.ReadAllText(log) : "(no debug log)";
-            throw new Exception("DEBUG-PROBE " + detail + " || " + exception, exception);
-        }
+        var response = auth.ProcessChallenge(challenge);
 
         Assert.Equal(49, response.Length);
         Assert.Equal(0, response[48]); // flags
@@ -235,6 +225,21 @@ public class ProtocolTests
         // the derivation accepts an empty password without throwing.
         Assert.Equal(49, response.Length);
         Assert.NotEqual(new byte[24], response[24..48]);
+    }
+
+    [Fact]
+    public void MsChapV2_NtResponseMatchesIndependentDesVector()
+    {
+        // Vector computed independently: MD4 + RFC 2759 parity + DES via OpenSSL
+        // legacy provider for server challenge 0102..10 and peer challenge 6566..74,
+        // user "user", password "password".
+        var serverChallenge = Enumerable.Range(1, 16).Select(i => (byte)i).ToArray();
+        var clientChallenge = Enumerable.Range(0x65, 16).Select(i => (byte)i).ToArray();
+
+        var auth = new MsChapV2("user", "password");
+        var response = auth.ProcessChallengeWithClientChallenge(serverChallenge, clientChallenge);
+
+        Assert.Equal("EF0F44CFF7903780", Convert.ToHexString(response[24..48]));
     }
 
     [Fact]

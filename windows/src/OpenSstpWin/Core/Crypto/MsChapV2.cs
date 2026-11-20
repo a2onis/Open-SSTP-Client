@@ -58,6 +58,38 @@ public sealed class MsChapV2
         return response;
     }
 
+    /// <summary>
+    /// Test seam: processes a challenge with a fixed peer challenge so the
+    /// NT-Response can be compared against published vectors.
+    /// </summary>
+    internal byte[] ProcessChallengeWithClientChallenge(byte[] challengeValue, byte[] clientChallenge)
+    {
+        Array.Copy(challengeValue, 0, _serverChallenge, 0, 16);
+        Array.Copy(clientChallenge, 0, _clientChallenge, 0, 16);
+        ComputeClientResponse();
+        var response = new byte[49];
+        _clientChallenge.CopyTo(response, 0);
+        _clientResponse.CopyTo(response, 24);
+        return response;
+    }
+
+    private void ComputeClientResponse()
+    {
+        var passwordBytes = Encoding.Unicode.GetBytes(Password);
+        var challenge = ChallengeHash();
+
+        var zeroPassHash = new byte[21];
+        Md4.Hash(passwordBytes).CopyTo(zeroPassHash, 0);
+
+        for (var i = 0; i < 3; i++)
+        {
+            var key = AddParity(zeroPassHash.AsSpan(i * 7, 7));
+            var block = challenge.AsSpan(i * 8, 8).ToArray();
+            var encrypted = DesEncryptBlock(key, block);
+            encrypted.CopyTo(_clientResponse, i * 8);
+        }
+    }
+
     /// <summary>Verifies the "S=..." authenticator response in a success message.</summary>
     public bool VerifyAuthenticator(byte[] successMessage)
     {
@@ -87,42 +119,7 @@ public sealed class MsChapV2
     private void PrepareClientResponse()
     {
         RandomNumberGenerator.Fill(_clientChallenge);
-
-        var passwordBytes = Encoding.Unicode.GetBytes(Password);
-        var challenge = ChallengeHash();
-
-        var zeroPassHash = new byte[21];
-        Md4.Hash(passwordBytes).CopyTo(zeroPassHash, 0);
-
-        // Steps 9-10 of RFC 2759 8.5: split the 21 byte hash into three 7 byte
-        // chunks, give each odd parity, and encrypt one 8 byte challenge block.
-        for (var i = 0; i < 3; i++)
-        {
-            try
-            {
-                var key = AddParity(zeroPassHash.AsSpan(i * 7, 7));
-                var block = challenge.AsSpan(i * 8, 8).ToArray();
-                var encrypted = DesEncryptBlock(key, block);
-                encrypted.CopyTo(_clientResponse, i * 8);
-            }
-            catch (Exception exception)
-            {
-                var dbg = new System.Text.StringBuilder();
-                dbg.Append($"i={i} zeroPassHash={zeroPassHash.Length} challenge={challenge.Length} ");
-                dbg.Append($"blockLen={challenge.AsSpan(i * 8, 8).Length} ");
-                dbg.Append($"mode={CipherMode.ECB} ");
-                var probe = DES.Create();
-                dbg.Append($"probeKeySize={probe.KeySize} probeBlockSize={probe.BlockSize} ");
-                dbg.Append($"trace={exception.StackTrace?.Replace(Environment.NewLine, " | ")}");
-                System.IO.File.WriteAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "mschapv2-des.log"), dbg.ToString());
-                var derivedKey = AddParity(zeroPassHash.AsSpan(i * 7, 7));
-                var blockText = Convert.ToHexString(challenge.AsSpan(i * 8, 8));
-                throw new InvalidOperationException(
-                    $"MS-CHAPv2 DES step {i} failed (block {blockText}, key {Convert.ToHexString(derivedKey)}): " +
-                    $"{exception.GetType().Name}: {exception.Message} @ {exception.StackTrace}", exception);
-            }
-        }
+        ComputeClientResponse();
     }
 
     /// <summary>
