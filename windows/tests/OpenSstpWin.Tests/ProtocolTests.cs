@@ -170,7 +170,11 @@ public class ProtocolTests
     private static string IndependentSha1Prf(byte[] hlak)
     {
         var seed = Encoding.ASCII.GetBytes("SSTP inner method derived CMK");
-        var data = seed.Concat(new byte[] { 0x00, 0x14, 0x01 }).ToArray();
+        var data = new byte[seed.Length + 3];
+        seed.CopyTo(data, 0);
+        data[^3] = 0x00;
+        data[^2] = 0x14;
+        data[^1] = 0x01;
         using var hmac = new System.Security.Cryptography.HMACSHA1(hlak);
         return Convert.ToHexString(hmac.ComputeHash(data));
     }
