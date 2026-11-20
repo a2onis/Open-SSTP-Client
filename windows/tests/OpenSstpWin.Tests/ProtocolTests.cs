@@ -239,7 +239,7 @@ public class ProtocolTests
         var auth = new MsChapV2("user", "password");
         var response = auth.ProcessChallengeWithClientChallenge(serverChallenge, clientChallenge);
 
-        Assert.Equal("EF0F44CFF7903780", Convert.ToHexString(response[24..48]));
+        Assert.Equal("EF0F44CFF7903780", Convert.ToHexString(response[24..32]));
     }
 
     [Fact]
