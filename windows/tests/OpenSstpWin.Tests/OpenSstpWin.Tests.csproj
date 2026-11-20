@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\OpenSstpWin\OpenSstpWin.csproj" />
+    <ProjectReference Include="..\..\src\OpenSstpWin\OpenSstpWin.csproj" />
   </ItemGroup>
 
 </Project>
