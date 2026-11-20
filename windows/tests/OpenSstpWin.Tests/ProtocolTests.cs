@@ -145,18 +145,34 @@ public class ProtocolTests
     [Fact]
     public void CmkDerivation_MatchesIkev2PrfPlus()
     {
-        // PRF+ (RFC 4306 2.13): T1 = HMAC(K, seed||S); result = T1 || T2 ...
+        // CMK = first 32 octets of PRF+(HLAK, seed || 0x0020 || 0x01).
+        // The expected value below was computed independently with Python's hmac:
+        //   hmac.new(bytes(32), b"SSTP inner method derived CMK" + bytes([0,0x20,1]),
+        //            hashlib.sha256).digest()
         var hlak = new byte[32];
-        var seed = Encoding.ASCII.GetBytes("SSTP inner method derived CMK");
-        var data = seed.Concat(new byte[] { 0x00, 0x20, 0x01 }).ToArray();
-
-        using var hmac = new System.Security.Cryptography.HMACSHA256(hlak);
-        var t1 = hmac.ComputeHash(data);
-        var t2 = hmac.ComputeHash(data.Concat(t1).ToArray()[..(data.Length + 1)]);
-        var expected = t1.AsSpan(0, 32).ToArray();
+        var expected = Convert.FromHexString(
+            "D3653B189BBEF8E989B5051F05CD3C5F43429F243E39F87E1B58A802B578AF12");
 
         Assert.Equal(expected, SstpCrypto.DeriveCmk(hlak, sha256: true));
-        Assert.NotEmpty(t2);
+    }
+
+    [Fact]
+    public void CmkDerivation_Sha1VariantMatchesIndependentPrf()
+    {
+        // hmac.new(bytes(32), seed + bytes([0,0x14,1]), hashlib.sha1).digest()
+        var hlak = new byte[32];
+        var expected = Convert.FromHexString("0A019D5491F76CDC3A4B992FF6DD63AE6757BCA7");
+
+        Assert.Equal(expected, SstpCrypto.DeriveCmk(hlak, sha256: false));
+        Assert.Equal(expected, IndependentSha1Prf(hlak));
+    }
+
+    private static string IndependentSha1Prf(byte[] hlak)
+    {
+        var seed = Encoding.ASCII.GetBytes("SSTP inner method derived CMK");
+        var data = seed.Concat(new byte[] { 0x00, 0x14, 0x01 }).ToArray();
+        using var hmac = new System.Security.Cryptography.HMACSHA1(hlak);
+        return Convert.ToHexString(hmac.ComputeHash(data));
     }
 
     [Fact]

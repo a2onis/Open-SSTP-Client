@@ -90,6 +90,8 @@ public sealed class MsChapV2
         var zeroPassHash = new byte[21];
         Md4.Hash(passwordBytes).CopyTo(zeroPassHash, 0);
 
+        // Steps 9-10 of RFC 2759 8.5: split the 21 byte hash into three 7 byte
+        // chunks, give each odd parity, and encrypt one 8 byte challenge block.
         for (var i = 0; i < 3; i++)
         {
             using var des = DES.Create();
@@ -97,7 +99,8 @@ public sealed class MsChapV2
             des.Padding = PaddingMode.None;
             des.Key = AddParity(zeroPassHash.AsSpan(i * 7, 7));
 
-            var encrypted = des.EncryptEcb(challenge.AsSpan(i * 8, 8), PaddingMode.None);
+            var block = challenge.AsSpan(i * 8, 8).ToArray();
+            var encrypted = des.EncryptEcb(block, PaddingMode.None);
             encrypted.CopyTo(_clientResponse, i * 8);
         }
     }
