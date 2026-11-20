@@ -1,4 +1,5 @@
 using System.Text;
+using Xunit;
 using OpenSstpWin;
 using OpenSstpWin.Crypto;
 using OpenSstpWin.Protocol;

@@ -21,11 +21,9 @@
     <Copyright>MIT licensed. Based on Open-SSTP-Client by kittoku.</Copyright>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <PublishReadyToRun>false</PublishReadyToRun>
-    <SelfContained>true</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Self-contained/single-file is selected on the publish command line so that
+         the test project can reference this project without inheriting it. -->
     <DebugType>none</DebugType>
-    <!-- Trim off unused framework pieces to keep the portable folder reasonable. -->
     <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
 
