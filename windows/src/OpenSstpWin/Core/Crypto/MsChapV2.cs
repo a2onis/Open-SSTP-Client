@@ -94,10 +94,20 @@ public sealed class MsChapV2
         // chunks, give each odd parity, and encrypt one 8 byte challenge block.
         for (var i = 0; i < 3; i++)
         {
-            var key = AddParity(zeroPassHash.AsSpan(i * 7, 7));
-            var block = challenge.AsSpan(i * 8, 8).ToArray();
-            var encrypted = DesEncryptBlock(key, block);
-            encrypted.CopyTo(_clientResponse, i * 8);
+            try
+            {
+                var key = AddParity(zeroPassHash.AsSpan(i * 7, 7));
+                var block = challenge.AsSpan(i * 8, 8).ToArray();
+                var encrypted = DesEncryptBlock(key, block);
+                encrypted.CopyTo(_clientResponse, i * 8);
+            }
+            catch (Exception exception)
+            {
+                var derivedKey = AddParity(zeroPassHash.AsSpan(i * 7, 7));
+                throw new InvalidOperationException(
+                    $"MS-CHAPv2 DES step {i} failed (challenge {challenge.Length} bytes, key {Convert.ToHexString(derivedKey)}): " +
+                    $"{exception.GetType().Name}: {exception.Message}", exception);
+            }
         }
     }
 
