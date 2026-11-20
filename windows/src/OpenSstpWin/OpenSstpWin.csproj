@@ -19,7 +19,6 @@
     <Company>Open SSTP Client contributors</Company>
     <Product>Open SSTP Client for Windows</Product>
     <Copyright>MIT licensed. Based on Open-SSTP-Client by kittoku.</Copyright>
-    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <PublishReadyToRun>false</PublishReadyToRun>
     <!-- Self-contained/single-file is selected on the publish command line so that
          the test project can reference this project without inheriting it. -->
