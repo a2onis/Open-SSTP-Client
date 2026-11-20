@@ -99,8 +99,9 @@ public sealed class MsChapV2
             des.Padding = PaddingMode.None;
             des.Key = AddParity(zeroPassHash.AsSpan(i * 7, 7));
 
+            using var encryptor = des.CreateEncryptor();
             var block = challenge.AsSpan(i * 8, 8).ToArray();
-            var encrypted = des.EncryptEcb(block, PaddingMode.None);
+            var encrypted = encryptor.TransformFinalBlock(block, 0, block.Length);
             encrypted.CopyTo(_clientResponse, i * 8);
         }
     }
