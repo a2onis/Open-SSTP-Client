@@ -243,13 +243,6 @@ public class ProtocolTests
     }
 
     [Fact]
-    public void DescribeSteps()
-    {
-        var auth = new MsChapV2("user", "password");
-        Assert.True(false, "STEPS: " + auth.DescribeClientResponseSteps());
-    }
-
-    [Fact]
     public void MsChapV2_RejectsShortChallenge()
     {
         var auth = new MsChapV2("user", "password");
