@@ -164,7 +164,7 @@ public class ProtocolTests
         var expected = Convert.FromHexString("0A019D5491F76CDC3A4B992FF6DD63AE6757BCA7");
 
         Assert.Equal(expected, SstpCrypto.DeriveCmk(hlak, sha256: false));
-        Assert.Equal(expected, IndependentSha1Prf(hlak));
+        Assert.Equal(Convert.ToHexString(expected), IndependentSha1Prf(hlak));
     }
 
     private static string IndependentSha1Prf(byte[] hlak)
