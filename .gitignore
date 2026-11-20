@@ -8,3 +8,9 @@
 /local.properties
 /playground
 /releases
+
+# Windows port build output
+windows/publish/
+windows/dist/
+windows/**/bin/
+windows/**/obj/

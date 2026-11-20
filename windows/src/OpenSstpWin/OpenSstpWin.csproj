@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>OpenSstpWin</RootNamespace>
+    <AssemblyName>OpenSstpWin</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Allows building (compile only) on non-Windows hosts such as CI containers. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <Version>1.10.5</Version>
+    <FileVersion>1.10.5.0</FileVersion>
+    <AssemblyVersion>1.10.5.0</AssemblyVersion>
+    <Company>Open SSTP Client contributors</Company>
+    <Product>Open SSTP Client for Windows</Product>
+    <Copyright>MIT licensed. Based on Open-SSTP-Client by kittoku.</Copyright>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <DebugType>none</DebugType>
+    <!-- Trim off unused framework pieces to keep the portable folder reasonable. -->
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+</Project>
