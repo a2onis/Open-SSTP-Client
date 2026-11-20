@@ -40,14 +40,14 @@ public sealed class MsChapV2
     /// Processes a CHAP challenge value and returns the CHAP response value:
     /// peer-challenge (16) + zero (1) + NT-response (24) + flags (1) + zero (7).
     /// </summary>
-    public byte[] ProcessChallenge(ReadOnlySpan<byte> challengeValue)
+    public byte[] ProcessChallenge(byte[] challengeValue)
     {
         if (challengeValue.Length < 16)
         {
             throw new SstpProtocolException("Malformed MS-CHAPv2 challenge");
         }
 
-        challengeValue[..16].CopyTo(_serverChallenge);
+        Array.Copy(challengeValue, 0, _serverChallenge, 0, 16);
         PrepareClientResponse();
 
         // RFC 2759 2.2: Peer-Challenge(16) || Reserved(8) || NT-Response(24) || Flags(1)
@@ -59,14 +59,14 @@ public sealed class MsChapV2
     }
 
     /// <summary>Verifies the "S=..." authenticator response in a success message.</summary>
-    public bool VerifyAuthenticator(ReadOnlySpan<byte> successMessage)
+    public bool VerifyAuthenticator(byte[] successMessage)
     {
         if (successMessage.Length < _serverResponse.Length)
         {
             return false;
         }
 
-        successMessage[.._serverResponse.Length].CopyTo(_serverResponse);
+        Array.Copy(successMessage, 0, _serverResponse, 0, _serverResponse.Length);
         return CheckServerResponse();
     }
 
