@@ -30,4 +30,11 @@
     <InternalsVisibleTo Include="OpenSstpWin.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- ImplicitUsings does not include System.Runtime/System.IO for every target,
+         and span extensions (ReadOnlySpan.ToArray, Stream.ReadAsync) live there. -->
+    <Using Include="System.Runtime" />
+    <Using Include="System.IO" />
+  </ItemGroup>
+
 </Project>

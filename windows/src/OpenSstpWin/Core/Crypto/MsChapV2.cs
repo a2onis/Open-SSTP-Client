@@ -77,7 +77,11 @@ public sealed class MsChapV2
         _clientChallenge.CopyTo(input, 0);
         _serverChallenge.CopyTo(input, 16);
         userBytes.CopyTo(input, 32);
-        return SHA1.HashData(input).AsSpan(0, 8).ToArray();
+
+        var digest = SHA1.HashData(input);
+        var first = new byte[8];
+        Array.Copy(digest, 0, first, 0, 8);
+        return first;
     }
 
     private void PrepareClientResponse()
