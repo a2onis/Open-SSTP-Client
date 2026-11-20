@@ -35,6 +35,10 @@
          and span extensions (ReadOnlySpan.ToArray, Stream.ReadAsync) live there. -->
     <Using Include="System.Runtime" />
     <Using Include="System.IO" />
+    <!-- System.Text.Unicode declares enums named ASCII/UTF8/Unicode, which would
+         shadow System.Text.Encoding.ASCII/Unicode and silently change behaviour. -->
+    <Using Remove="System.Text.Unicode" />
+    <Using Remove="System.Text.Encodings" />
   </ItemGroup>
 
 </Project>

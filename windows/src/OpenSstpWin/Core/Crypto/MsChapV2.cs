@@ -4,6 +4,7 @@ using OpenSstpWin.Protocol;
 
 namespace OpenSstpWin.Crypto;
 
+
 /// <summary>
 /// MS-CHAPv2 client state machine (RFC 2759) including the MPPE key derivation,
 /// ported from the Android client's MSCHAPV2Client.
