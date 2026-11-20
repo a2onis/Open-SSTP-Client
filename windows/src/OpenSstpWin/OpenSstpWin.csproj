@@ -26,4 +26,8 @@
     <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenSstpWin.Tests" />
+  </ItemGroup>
+
 </Project>
