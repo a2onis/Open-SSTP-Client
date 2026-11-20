@@ -243,19 +243,10 @@ public class ProtocolTests
     }
 
     [Fact]
-    public void EncodingProbe()
+    public void DescribeSteps()
     {
-        var results = new List<string>();
-        Try(results, "tunnel.Encoding.Unicode", () => OpenSstpWin.Core.TunnelProbe.Unicode("password"));
-        Try(results, "tunnel.Encoding.ASCII", () => OpenSstpWin.Core.TunnelProbe.Ascii("user"));
-        Try(results, "crypto.Encoding.Unicode", () => OpenSstpWin.Crypto.EncodingProbe.Unicode("password"));
-        Assert.True(false, "ENCODING: " + string.Join(" | ", results));
-    }
-
-    private static void Try(List<string> results, string name, Func<string> action)
-    {
-        try { results.Add(name + "=" + action()); }
-        catch (Exception e) { results.Add(name + " THREW " + e.GetType().Name + " " + e.Message); }
+        var auth = new MsChapV2("user", "password");
+        Assert.True(false, "STEPS: " + auth.DescribeClientResponseSteps());
     }
 
     [Fact]

@@ -74,6 +74,34 @@ public sealed class MsChapV2
         return response;
     }
 
+    /// <summary>Temporary instrumentation: reports how far the DES step gets.</summary>
+    internal string DescribeClientResponseSteps()
+    {
+        var steps = new List<string>();
+        void Step(string name, Action action)
+        {
+            try { action(); steps.Add(name + ":ok"); }
+            catch (Exception e) { steps.Add(name + ":THREW " + e.GetType().Name + " " + e.Message); }
+        }
+
+        byte[] passwordBytes = Array.Empty<byte>();
+        byte[] challenge = Array.Empty<byte>();
+        var zeroPassHash = new byte[21];
+        Step("password", () => passwordBytes = Encoding.Unicode.GetBytes(Password));
+        Step("challenge", () => challenge = ChallengeHash());
+        Step("md4", () => Md4.Hash(passwordBytes).CopyTo(zeroPassHash, 0));
+        for (var i = 0; i < 3; i++)
+        {
+            var index = i;
+            Step($"parity{index}", () => AddParity(zeroPassHash.AsSpan(index * 7, 7)));
+            Step($"block{index}", () => _ = challenge.AsSpan(index * 8, 8).ToArray());
+            Step($"des{index}", () => DesEncryptBlock(AddParity(zeroPassHash.AsSpan(index * 7, 7)), challenge.AsSpan(index * 8, 8).ToArray()));
+            Step($"copy{index}", () => DesEncryptBlock(AddParity(zeroPassHash.AsSpan(index * 7, 7)), challenge.AsSpan(index * 8, 8).ToArray()).CopyTo(_clientResponse, index * 8));
+        }
+
+        return string.Join(" | ", steps) + $" || passwordBytes={passwordBytes.Length} challenge={challenge.Length}";
+    }
+
     private void ComputeClientResponse()
     {
         var passwordBytes = Encoding.Unicode.GetBytes(Password);
