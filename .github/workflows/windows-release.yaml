@@ -32,7 +32,21 @@ jobs:
 
       - name: Unit tests (protocol and crypto)
         working-directory: windows
-        run: dotnet test tests/OpenSstpWin.Tests/OpenSstpWin.Tests.csproj -c Release --logger "console;verbosity=normal"
+        shell: pwsh
+        run: |
+          dotnet test tests/OpenSstpWin.Tests/OpenSstpWin.Tests.csproj -c Release --logger "trx;LogFileName=results.trx" --results-directory TestResults
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) {
+            [xml]$trx = Get-Content TestResults/results.trx
+            $failed = $trx.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -ne 'Passed' }
+            foreach ($test in $failed) {
+              $message = ($test.Output.ErrorInfo.Message + " " + $test.Output.ErrorInfo.StackTrace)
+              if ($message.Length -gt 900) { $message = $message.Substring(0, 900) }
+              $message = ($message -replace "`r?`n", " ")
+              Write-Host "::error file=windows/tests/OpenSstpWin.Tests/ProtocolTests.cs,title=$($test.testName)::$message"
+            }
+            exit $exitCode
+          }
 
       - name: Build portable package
         working-directory: windows
