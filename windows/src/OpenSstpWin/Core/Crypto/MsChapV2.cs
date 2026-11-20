@@ -107,6 +107,15 @@ public sealed class MsChapV2
             }
             catch (Exception exception)
             {
+                var dbg = new System.Text.StringBuilder();
+                dbg.Append($"i={i} zeroPassHash={zeroPassHash.Length} challenge={challenge.Length} ");
+                dbg.Append($"blockLen={challenge.AsSpan(i * 8, 8).Length} ");
+                dbg.Append($"mode={CipherMode.ECB} ");
+                var probe = DES.Create();
+                dbg.Append($"probeKeySize={probe.KeySize} probeBlockSize={probe.BlockSize} ");
+                dbg.Append($"trace={exception.StackTrace?.Replace(Environment.NewLine, " | ")}");
+                System.IO.File.WriteAllText(
+                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "mschapv2-des.log"), dbg.ToString());
                 var derivedKey = AddParity(zeroPassHash.AsSpan(i * 7, 7));
                 var blockText = Convert.ToHexString(challenge.AsSpan(i * 8, 8));
                 throw new InvalidOperationException(

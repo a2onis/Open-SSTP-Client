@@ -204,7 +204,17 @@ public class ProtocolTests
         }
 
         var auth = new MsChapV2("user", "password");
-        var response = auth.ProcessChallenge(challenge);
+        byte[] response;
+        try
+        {
+            response = auth.ProcessChallenge(challenge);
+        }
+        catch (Exception exception)
+        {
+            var log = Path.Combine(Path.GetTempPath(), "mschapv2-des.log");
+            var detail = File.Exists(log) ? File.ReadAllText(log) : "(no debug log)";
+            throw new Exception("DEBUG-PROBE " + detail + " || " + exception, exception);
+        }
 
         Assert.Equal(49, response.Length);
         Assert.Equal(0, response[48]); // flags
