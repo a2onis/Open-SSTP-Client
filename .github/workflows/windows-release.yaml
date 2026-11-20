@@ -1,0 +1,118 @@
+name: Windows build and portable release
+
+on:
+  push:
+    branches: ["**"]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Build portable Windows x64 package
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Show SDK information
+        run: dotnet --info
+
+      - name: Build (warnings are errors)
+        working-directory: windows
+        run: |
+          dotnet build src/OpenSstpWin/OpenSstpWin.csproj -c Release -warnaserror
+
+      - name: Unit tests (protocol and crypto)
+        working-directory: windows
+        shell: pwsh
+        run: |
+          dotnet test tests/OpenSstpWin.Tests/OpenSstpWin.Tests.csproj -c Release --logger "trx;LogFileName=results.trx" --results-directory TestResults
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) {
+            [xml]$trx = Get-Content TestResults/results.trx
+            $failed = $trx.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -ne 'Passed' }
+            foreach ($test in $failed) {
+              $message = ($test.Output.ErrorInfo.Message + " " + $test.Output.ErrorInfo.StackTrace)
+              if ($message.Length -gt 900) { $message = $message.Substring(0, 900) }
+              $message = ($message -replace "`r?`n", " ")
+              Write-Host "::error file=windows/tests/OpenSstpWin.Tests/ProtocolTests.cs,title=$($test.testName)::$message"
+            }
+            exit $exitCode
+          }
+
+      - name: Build portable package
+        working-directory: windows
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          if (-not $version -or $version -notmatch '^[0-9]') { $version = "1.10.5" }
+          $version = ($version -replace '[^0-9A-Za-z\.\-]', '.')
+          ./build-portable.ps1 -Version $version -SkipTests
+
+      - name: Show package contents
+        working-directory: windows
+        run: |
+          Get-ChildItem dist -Recurse | Format-Table FullName, Length
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenSstpWin-win-x64-portable
+          path: |
+            windows/dist/*.zip
+            windows/dist/*.sha256
+          if-no-files-found: error
+
+  release:
+    name: Publish portable build to GitHub Releases
+    needs: [windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the portable package
+        uses: actions/download-artifact@v4
+        with:
+          name: OpenSstpWin-win-x64-portable
+          path: dist
+
+      - name: List release files
+        run: ls -l dist
+
+      - name: Create or update the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          shopt -s nullglob
+          files=(dist/*.zip dist/*.sha256)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo '::error::No portable package was produced.'
+            exit 1
+          fi
+          name="Open SSTP Client for Windows ${GITHUB_REF_NAME#v} (portable, x64)"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${files[@]}" \
+              --title "$name" \
+              --notes "Portable Windows 11 x64 build of the Open SSTP Client.
+
+          Download \`OpenSstpWin-win-x64-portable-*.zip\`, unzip it anywhere and run
+          \`OpenSstpWin.exe\` as administrator. No installer and no .NET runtime are
+          required. See README.txt inside the archive for usage and options.
+
+          The SHA-256 checksum of the zip is attached as \`.sha256\`."
+          fi

@@ -93,6 +93,43 @@ workflow signs and verifies the release APK and attaches it to a GitHub Release.
 Keep the same signing key for future updates. No release is published until a
 tag is pushed and the secrets are configured.
 
+### Windows 11 (x64) portable build
+
+`windows/` contains a Windows port of the same SSTP/PPP stack, written in C# for
+.NET 8 and shipped as a portable, self-contained folder. Download
+`OpenSstpWin-win-x64-portable-<version>.zip` from [the releases page](https://github.com/a2onis/Open-SSTP-Client/releases),
+unzip it anywhere and run `OpenSstpWin.exe` as administrator (administrator
+rights are required to create the virtual adapter). No installer and no .NET
+runtime are needed.
+
+The port keeps the Android client's protocol behaviour — TLS 1.2 with the
+`SSTP_DUPLEX_POST` request, `CALL_CONNECT_REQUEST`/`ACK`, LCP, PAP,
+MS-CHAPv2 and EAP-MS-CHAPv2 authentication, the `CALL_CONNECTED` crypto
+binding, IPCP/IPv6CP and PPP data framing — and replaces the Android VPN service
+with the [Wintun](https://www.wintun.net/) layer-3 adapter (the signed driver
+used by WireGuard, shipped alongside the executable).
+
+```powershell
+OpenSstpWin.exe --host vpn.example.com --user myname --interactive
+OpenSstpWin.exe --help
+```
+
+Settings are stored in `%LOCALAPPDATA%\OpenSstpWin\settings.json` and can also
+be changed per run with command line options. The Windows build adds routes to
+the active store only, keeps a host route so the VPN server itself stays on the
+physical adapter, and restores the previous DNS configuration on disconnect.
+See `windows/README-WINDOWS.txt` for the full option list and troubleshooting.
+
+To build it yourself, on Windows with the .NET 8 SDK:
+
+```powershell
+cd windows
+./build-portable.ps1          # tests, publishes win-x64, writes dist/*.zip
+```
+
+The `Windows build and portable release` workflow builds and tests the port on
+every push and attaches the portable zip to releases tagged `v*`.
+
 This repository incorporates upstream Open-SSTP-Client source at commit `5f97511c3afff7dcf76b763882e0e29207ad1a36`; see LICENSE and CONTRIBUTORS.md.
 
 ### Importing an endpoint list
