@@ -104,9 +104,10 @@ public sealed class MsChapV2
             catch (Exception exception)
             {
                 var derivedKey = AddParity(zeroPassHash.AsSpan(i * 7, 7));
+                var blockText = Convert.ToHexString(challenge.AsSpan(i * 8, 8));
                 throw new InvalidOperationException(
-                    $"MS-CHAPv2 DES step {i} failed (challenge {challenge.Length} bytes, key {Convert.ToHexString(derivedKey)}): " +
-                    $"{exception.GetType().Name}: {exception.Message}", exception);
+                    $"MS-CHAPv2 DES step {i} failed (block {blockText}, key {Convert.ToHexString(derivedKey)}): " +
+                    $"{exception.GetType().Name}: {exception.Message} @ {exception.StackTrace}", exception);
             }
         }
     }
