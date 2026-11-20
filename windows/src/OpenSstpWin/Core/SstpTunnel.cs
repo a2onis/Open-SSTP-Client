@@ -72,7 +72,7 @@ public sealed class SstpTunnel : IAsyncDisposable
     private int _mru;
     private string _authProtocol = string.Empty;
     private byte[] _hlak = Array.Empty<byte>();
-    private byte _hashProtocol = CertHashProtocolSha256;
+    private byte _hashProtocol = CertHashProtocol.Sha256;
     private readonly byte[] _nonce = new byte[32];
     private byte[] _peerCertificate = Array.Empty<byte>();
 
@@ -587,8 +587,8 @@ public sealed class SstpTunnel : IAsyncDisposable
                         var bitmask = reader.U8();
                         _hashProtocol = bitmask switch
                         {
-                            1 => CertHashProtocolSha1,
-                            2 or 3 => CertHashProtocolSha256,
+                            1 => CertHashProtocol.Sha1,
+                            2 or 3 => CertHashProtocol.Sha256,
                             _ => throw new SstpProtocolException($"Unsupported certificate hash bitmask 0x{bitmask:X2}."),
                         };
                         reader.ByteArray(32).CopyTo(_nonce, 0);
@@ -630,7 +630,7 @@ public sealed class SstpTunnel : IAsyncDisposable
             throw new SstpProtocolException("Authentication did not produce a key for the crypto binding.");
         }
 
-        var sha256 = _hashProtocol == CertHashProtocolSha256;
+        var sha256 = _hashProtocol == CertHashProtocol.Sha256;
         var certHash = SstpCrypto.CertHash(_peerCertificate, sha256);
         var cmk = SstpCrypto.DeriveCmk(_hlak, sha256);
 

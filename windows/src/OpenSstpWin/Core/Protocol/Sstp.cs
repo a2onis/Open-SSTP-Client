@@ -41,11 +41,12 @@ public static class SstpAttributeId
     public const byte CryptoBindingRequest = 4;
 }
 
-public const byte CertHashProtocolSha1 = 1;
-public const byte CertHashProtocolSha256 = 2;
-
-/// <summary>Compulsory tunnel attribute: 1 byte reserved, target attribute, 4 byte status.</summary>
-public static class SstpStatus
+/// <summary>Certificate hash protocol identifiers used by the crypto binding.</summary>
+public static class CertHashProtocol
+{
+    public const byte Sha1 = 1;
+    public const byte Sha256 = 2;
+}
 
 public sealed class SstpStatusInfo
 {

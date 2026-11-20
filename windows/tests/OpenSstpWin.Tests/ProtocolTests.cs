@@ -50,7 +50,7 @@ public class ProtocolTests
         var nonce = Enumerable.Range(0, 32).Select(i => (byte)i).ToArray();
         var certHash = Enumerable.Repeat((byte)0xAB, 32).ToArray();
 
-        var packet = SstpBuilder.CallConnectedForMac(CertHashProtocolSha256, nonce, certHash);
+        var packet = SstpBuilder.CallConnectedForMac(CertHashProtocol.Sha256, nonce, certHash);
 
         Assert.Equal(112, packet.Length);
         var parsed = SstpControlPacket.Parse(packet);
@@ -59,7 +59,7 @@ public class ProtocolTests
         var binding = parsed.Find(SstpAttributeId.CryptoBinding);
         Assert.NotNull(binding);
         Assert.Equal(100, binding!.Value.Length);
-        Assert.Equal(CertHashProtocolSha256, binding.Value[3]);
+        Assert.Equal(CertHashProtocol.Sha256, binding.Value[3]);
         Assert.Equal(nonce, binding.Value[4..36]);
         Assert.Equal(certHash, binding.Value[36..68]);
         Assert.All(binding.Value[68..100], b => Assert.Equal(0, b));
