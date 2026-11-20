@@ -20,27 +20,36 @@ public static class SstpCrypto
     {
         var keyLength = sha256 ? 32 : 20;
 
+        // PRF+ input: seed (29) || key length (2, big endian) || counter (1).
         var data = new byte[CmkSeed.Length + 3];
         CmkSeed.CopyTo(data, 0);
-        data[CmkSeed.Length] = (byte)(keyLength >> 8);
-        data[CmkSeed.Length + 1] = (byte)keyLength;
-        data[CmkSeed.Length + 2] = 0x01;
+        data[^3] = (byte)(keyLength >> 8);
+        data[^2] = (byte)keyLength;
+        data[^1] = 0x01;
 
-        using var hmac = sha256 ? (HMAC)new HMACSHA256(hlak) : new HMACSHA1(hlak);
+        using var hmac = sha256
+            ? (HMAC)new HMACSHA256(hlak)
+            : new HMACSHA1(hlak);
 
         var output = new byte[keyLength];
         var produced = 0;
-        var counter = (byte)1;
-        var block = new byte[data.Length + 1];
+        byte[]? previous = null;
+
         while (produced < keyLength)
         {
+            // T(n) = HMAC(K, S | T(n-1)) where S is the whole PRF+ input above.
+            var block = new byte[data.Length + (previous?.Length ?? 0)];
             data.CopyTo(block, 0);
-            block[^1] = counter;
+            if (previous is not null)
+            {
+                previous.CopyTo(block, data.Length);
+            }
+
             var hash = hmac.ComputeHash(block);
             var take = Math.Min(hash.Length, keyLength - produced);
             Array.Copy(hash, 0, output, produced, take);
             produced += take;
-            counter++;
+            previous = hash;
         }
 
         return output;
