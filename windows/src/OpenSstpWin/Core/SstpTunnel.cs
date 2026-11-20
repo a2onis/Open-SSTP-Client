@@ -553,60 +553,78 @@ public sealed class SstpTunnel : IAsyncDisposable
 
     private async Task SendConnectRequestAsync(CancellationToken token)
     {
+        // The server repeats CALL_CONNECT_ACK every 60 s until it is acknowledged,
+        // so each attempt only needs one read window; retry if it stays silent.
         for (var attempt = 0; attempt < 3; attempt++)
         {
             await SendRawAsync(SstpBuilder.CallConnectRequest(), token).ConfigureAwait(false);
 
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token, _cts.Token);
-            timeout.CancelAfter(TimeSpan.FromSeconds(60));
+            using var window = CancellationTokenSource.CreateLinkedTokenSource(token, _cts.Token);
+            window.CancelAfter(TimeSpan.FromSeconds(60));
 
-            while (true)
+            try
             {
-                SstpControlPacket packet;
-                try
-                {
-                    packet = await ReadControlAsync(timeout.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (_cts.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (OperationCanceledException)
-                {
-                    throw new TimeoutException("No CALL_CONNECT_ACK from the server.");
-                }
+                await ReadConnectAckAsync(window.Token).ConfigureAwait(false);
+                return;
+            }
+            catch (TimeoutException) when (attempt < 2)
+            {
+                // Nothing arrived in time: resend CALL_CONNECT_REQUEST.
+            }
+        }
 
-                switch (packet.Type)
+        throw new TimeoutException("No CALL_CONNECT_ACK from the server.");
+    }
+
+    private async Task ReadConnectAckAsync(CancellationToken token)
+    {
+        while (true)
+        {
+            SstpControlPacket packet;
+            try
+            {
+                packet = await ReadControlAsync(token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (_cts.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException)
+            {
+                throw new TimeoutException("No CALL_CONNECT_ACK from the server.");
+            }
+
+            switch (packet.Type)
+            {
+                case SstpMessage.CallConnectAck:
                 {
-                    case SstpMessage.CallConnectAck:
+                    var request = packet.Find(SstpAttributeId.CryptoBindingRequest)
+                        ?? throw new SstpProtocolException("CALL_CONNECT_ACK without a crypto binding request.");
+                    var reader = new ByteReader(request.Value);
+                    reader.Skip(3);
+                    var bitmask = reader.U8();
+                    _hashProtocol = bitmask switch
                     {
-                        var request = packet.Find(SstpAttributeId.CryptoBindingRequest)
-                            ?? throw new SstpProtocolException("CALL_CONNECT_ACK without a crypto binding request.");
-                        var reader = new ByteReader(request.Value);
-                        reader.Skip(3);
-                        var bitmask = reader.U8();
-                        _hashProtocol = bitmask switch
-                        {
-                            1 => CertHashProtocol.Sha1,
-                            2 or 3 => CertHashProtocol.Sha256,
-                            _ => throw new SstpProtocolException($"Unsupported certificate hash bitmask 0x{bitmask:X2}."),
-                        };
-                        reader.ByteArray(32).CopyTo(_nonce, 0);
-                        return;
-                    }
-
-                    case SstpMessage.CallConnectNak:
-                        throw new SstpProtocolException("The server rejected the SSTP call (CALL_CONNECT_NAK).");
-
-                    case SstpMessage.CallDisconnect:
-                        throw new SstpProtocolException("The server disconnected during setup.");
-
-                    case SstpMessage.CallAbort:
-                        throw new SstpProtocolException("The server aborted the SSTP call.");
-
-                    default:
-                        continue;
+                        1 => CertHashProtocol.Sha1,
+                        2 or 3 => CertHashProtocol.Sha256,
+                        _ => throw new SstpProtocolException($"Unsupported certificate hash bitmask 0x{bitmask:X2}."),
+                    };
+                    reader.ByteArray(32).CopyTo(_nonce, 0);
+                    return;
                 }
+
+                case SstpMessage.CallConnectNak:
+                    throw new SstpProtocolException("The server rejected the SSTP call (CALL_CONNECT_NAK).");
+
+                case SstpMessage.CallDisconnect:
+                    throw new SstpProtocolException("The server disconnected during setup.");
+
+                case SstpMessage.CallAbort:
+                    throw new SstpProtocolException("The server aborted the SSTP call.");
+
+                default:
+                    // Echo responses or stale packets: keep waiting.
+                    continue;
             }
         }
     }

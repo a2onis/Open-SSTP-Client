@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using OpenSstpWin.Protocol;
 
 namespace OpenSstpWin.Crypto;
 

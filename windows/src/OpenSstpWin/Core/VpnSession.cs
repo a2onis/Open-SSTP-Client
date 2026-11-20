@@ -69,7 +69,7 @@ public sealed class VpnSession : IAsyncDisposable
                 _log("Warning: could not determine the route to the VPN server; traffic may loop.");
             }
 
-            _tunnel = new SstpTunnel(_settings, Report);
+            _tunnel = new SstpTunnel(_settings, progress => Report(progress.State, progress.Message));
             _result = await _tunnel.ConnectAsync(token).ConfigureAwait(false);
 
             if (!_tunnel.IsConnected)
