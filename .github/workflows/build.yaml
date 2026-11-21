@@ -71,7 +71,7 @@ jobs:
           script: bash .github/scripts/run-ui-tests.sh
   release:
     needs: [build, ui-test]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-win.')
     runs-on: ubuntu-24.04
     permissions:
       contents: write

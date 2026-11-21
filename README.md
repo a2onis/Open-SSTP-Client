@@ -103,6 +103,28 @@ rights are required to create the virtual adapter). The window lets you enter
 the server, port and credentials, connect, and disconnect. A console may briefly
 appear during startup. No installer and no .NET runtime are needed.
 
+The portable window carries the Android app's menu and screens:
+
+* **Configurations** (button next to the configuration list, or the
+  **Configurations** menu) — add, load, edit, delete and test saved profiles,
+  import an endpoint list, and open **Find fastest from sources**.
+* **Find fastest from sources** — manage HTTPS source URLs, download them only
+  on request, deduplicate up to 1,000 endpoints, probe every advertised port
+  over TCP, and rank the reachable ones by connect time. Results can be saved
+  as configurations or applied to the current settings.
+* **File → Save Profile / Import Profile / Export Profile**,
+  **Settings → Reload Defaults** and **Settings → Theme** (system, light or
+  dark) mirror the Android menu.
+* **Settings → Advanced Settings** exposes the Android SETTING tab: TLS version,
+  custom CA bundle, custom SNI, cipher suites, HTTP proxy, MRU/MTU, PPP
+  authentication protocols and timeout, IPv4/IPv6, static IPv4, custom DNS,
+  routing, logging and automatic reconnection.
+
+Android's app-based rules (`Select Allowed/Disallowed Apps`) have no Windows
+equivalent here: the Wintun adapter is machine-wide, so every application uses
+the tunnel. See `windows/README-WINDOWS.txt` for the window workflow and the
+complete command-line option list.
+
 The port keeps the Android client's protocol behaviour — TLS 1.2 with the
 `SSTP_DUPLEX_POST` request, `CALL_CONNECT_REQUEST`/`ACK`, LCP, PAP,
 MS-CHAPv2 and EAP-MS-CHAPv2 authentication, the `CALL_CONNECTED` crypto

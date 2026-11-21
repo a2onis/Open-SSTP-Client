@@ -93,6 +93,15 @@ public static class WindowsNetwork
         return Run("netsh", $"interface ipv6 add address \"{adapterName}\" {address} store=active");
     }
 
+    public static bool SetMtu(string adapterName, int mtu)
+    {
+        mtu = Math.Clamp(mtu, 576, 2000);
+        var ipv4 = Run("netsh",
+            $"interface ipv4 set subinterface \"{adapterName}\" mtu={mtu} store=active");
+        Run("netsh", $"interface ipv6 set subinterface \"{adapterName}\" mtu={mtu} store=active");
+        return ipv4;
+    }
+
     // ------------------------------------------------------------------ DNS
 
     public static bool SetDnsServers(string adapterName, IEnumerable<string> servers)

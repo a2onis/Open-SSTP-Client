@@ -1,5 +1,6 @@
 using System.Runtime.ExceptionServices;
 using OpenSstpWin;
+using OpenSstpWin.UI;
 using Xunit;
 
 namespace OpenSstpWin.Tests;

@@ -77,6 +77,8 @@ public sealed class SstpTunnel : IAsyncDisposable
     private byte[] _peerCertificate = Array.Empty<byte>();
 
     private readonly byte[] _localIp = new byte[4];
+    private readonly byte[] _requestedLocalIp = new byte[4];
+    private readonly bool _hasRequestedLocalIp;
     private readonly byte[] _peerIp = new byte[4];
     private readonly byte[] _dnsPrimary = new byte[4];
     private readonly byte[] _dnsSecondary = new byte[4];
@@ -87,6 +89,14 @@ public sealed class SstpTunnel : IAsyncDisposable
         _settings = settings;
         _report = report;
         _mru = settings.Mru;
+
+        if (settings.RequestStaticIpv4 &&
+            IPAddress.TryParse(settings.StaticIpv4Address, out var staticAddress) &&
+            staticAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            staticAddress.GetAddressBytes().CopyTo(_requestedLocalIp, 0);
+            _hasRequestedLocalIp = true;
+        }
     }
 
     public TunnelState State { get; private set; } = TunnelState.Idle;
@@ -148,7 +158,14 @@ public sealed class SstpTunnel : IAsyncDisposable
                 Result.PeerAddress = new IPAddress(_peerIp).ToString();
             }
 
-            if (_settings.RequestDns)
+            if (_settings.UseCustomDns)
+            {
+                // Custom DNS overrides whatever IPCP offered; VpnSession also adds
+                // host routes so the queries stay inside the tunnel.
+                Result.DnsServers.Clear();
+                Result.DnsServers.AddRange(_settings.CustomDnsServers);
+            }
+            else if (_settings.RequestDns)
             {
                 if (!IsAllZero(_dnsPrimary))
                 {
@@ -293,13 +310,23 @@ public sealed class SstpTunnel : IAsyncDisposable
 
         _tls = new SslStream(_rawStream, leaveInnerStreamOpen: false, ValidateCertificate);
 
+        var targetHost = _settings.UseCustomSni && !string.IsNullOrWhiteSpace(_settings.CustomSniHostname)
+            ? _settings.CustomSniHostname.Trim()
+            : host;
+
         var options = new SslClientAuthenticationOptions
         {
-            TargetHost = host,
-            EnabledSslProtocols = SslProtocols.Tls12,
+            TargetHost = targetHost,
+            EnabledSslProtocols = _settings.TlsVersion switch
+            {
+                TlsModes.Tls12 => SslProtocols.Tls12,
+                TlsModes.Tls13 => SslProtocols.Tls13,
+                _ => SslProtocols.None,
+            },
             CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
         };
 
+        ConfigureCipherSuites(options);
         await _tls.AuthenticateAsClientAsync(options, token).ConfigureAwait(false);
 
         if (_tls.RemoteCertificate is not null)
@@ -311,14 +338,141 @@ public sealed class SstpTunnel : IAsyncDisposable
 
     private bool ValidateCertificate(object sender, X509Certificate? certificate, X509Chain? chain, SslPolicyErrors errors)
     {
-        if (_settings.VerifyServerCertificate)
+        if (!_settings.VerifyServerCertificate)
+        {
+            // "Do not verify" accepts any chain. The SSTP crypto binding still proves
+            // the server's identity because it hashes the very certificate we see.
+            return true;
+        }
+
+        if (!_settings.UseCustomCa)
         {
             return errors == SslPolicyErrors.None;
         }
 
-        // "Do not verify" accepts any chain. The SSTP crypto binding still proves
-        // the server's identity because it hashes the very certificate we see.
-        return true;
+        // Android's "Specify Trusted Certificates" trusts only the chosen store.
+        // Rebuild the chain with CustomRootTrust and keep the hostname check.
+        if (certificate is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var leaf = new X509Certificate2(certificate);
+            using var customChain = new X509Chain();
+            customChain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+            customChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            customChain.ChainPolicy.CustomTrustStore.AddRange(LoadCustomRoots(_settings.CaBundlePath));
+            if (!customChain.Build(leaf))
+            {
+                return false;
+            }
+
+            return (errors & SslPolicyErrors.RemoteCertificateNameMismatch) == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static X509Certificate2Collection LoadCustomRoots(string path)
+    {
+        var roots = new X509Certificate2Collection();
+        if (System.IO.Directory.Exists(path))
+        {
+            var files = System.IO.Directory.EnumerateFiles(path)
+                .Where(IsCertificateFile)
+                .OrderBy(file => file, StringComparer.OrdinalIgnoreCase);
+            foreach (var file in files)
+            {
+                TryImportCertificate(roots, file);
+            }
+        }
+        else if (File.Exists(path))
+        {
+            TryImportCertificate(roots, path);
+        }
+
+        if (roots.Count == 0)
+        {
+            throw new SstpProtocolException("No certificates were found in " + path + ".");
+        }
+
+        return roots;
+    }
+
+    private static bool IsCertificateFile(string path)
+    {
+        var extension = Path.GetExtension(path);
+        return extension.Equals(".pem", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".crt", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".cer", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".der", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void TryImportCertificate(X509Certificate2Collection roots, string path)
+    {
+        try
+        {
+            var pem = new X509Certificate2Collection();
+            pem.ImportFromPemFile(path);
+            foreach (var certificate in pem)
+            {
+                roots.Add(certificate);
+            }
+
+            return;
+        }
+        catch
+        {
+            // Not a PEM file; try the binary certificate formats below.
+        }
+
+        try
+        {
+            roots.Add(new X509Certificate2(path));
+        }
+        catch
+        {
+            // Ignore files that are not certificates.
+        }
+    }
+
+    private void ConfigureCipherSuites(SslClientAuthenticationOptions options)
+    {
+        if (!_settings.UseCipherSuites || _settings.CipherSuites.Count == 0)
+        {
+            return;
+        }
+
+        var suites = new List<TlsCipherSuite>();
+        foreach (var name in _settings.CipherSuites)
+        {
+            if (Enum.TryParse<TlsCipherSuite>(name.Replace('-', '_').Trim(), ignoreCase: true, out var suite))
+            {
+                suites.Add(suite);
+            }
+        }
+
+        if (suites.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            options.CipherSuitesPolicy = new CipherSuitesPolicy(suites);
+        }
+        catch (PlatformNotSupportedException)
+        {
+            // Windows Schannel does not expose a cipher-suite policy to .NET.
+        }
+        catch (ArgumentException)
+        {
+            // An unknown/disabled suite must not block the connection.
+        }
     }
 
     private async Task EstablishProxyAsync(CancellationToken token)
@@ -1138,6 +1292,11 @@ public sealed class SstpTunnel : IAsyncDisposable
 
     private async Task RunIpcpAsync(CancellationToken token)
     {
+        if (_hasRequestedLocalIp)
+        {
+            _requestedLocalIp.CopyTo(_localIp, 0);
+        }
+
         var id = NextFrameId();
         await SendIpcpRequestAsync(id, token).ConfigureAwait(false);
 

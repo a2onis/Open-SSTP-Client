@@ -173,12 +173,17 @@ public sealed class VpnSession : IAsyncDisposable
             _log("Warning: the server did not assign an IPv4 address (IPCP).");
         }
 
+        if (!WindowsNetwork.SetMtu(_settings.AdapterName, _settings.Mtu))
+        {
+            _log("Warning: could not set the adapter MTU.");
+        }
+
         if (_settings.EnableIpv6)
         {
             WindowsNetwork.ConfigureIpv6(_settings.AdapterName, "fe80::8000:8000");
         }
 
-        if (_settings.RequestDns && result.DnsServers.Count > 0)
+        if (result.DnsServers.Count > 0)
         {
             if (WindowsNetwork.SetDnsServers(_settings.AdapterName, result.DnsServers))
             {
@@ -206,9 +211,18 @@ public sealed class VpnSession : IAsyncDisposable
             }
         }
 
-        foreach (var prefix in _settings.CustomRoutes.Where(p => !string.IsNullOrWhiteSpace(p)))
+        foreach (var dns in _settings.CustomDnsServers)
         {
-            AddRoute(interfaceIndex, prefix.Trim(), "0.0.0.0", "tunnel");
+            // Keep DNS queries to the custom server inside the tunnel.
+            AddRoute(interfaceIndex, dns + "/32", "0.0.0.0", "custom DNS");
+        }
+
+        if (_settings.AddCustomRoutes)
+        {
+            foreach (var prefix in _settings.CustomRoutes.Where(p => !string.IsNullOrWhiteSpace(p)))
+            {
+                AddRoute(interfaceIndex, prefix.Trim(), "0.0.0.0", "tunnel");
+            }
         }
 
         if (_settings.AddDefaultRoute)
