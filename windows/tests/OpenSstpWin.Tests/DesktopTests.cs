@@ -1,5 +1,6 @@
 using System.Runtime.ExceptionServices;
 using OpenSstpWin;
+using OpenSstpWin.UI;
 using Xunit;
 
 namespace OpenSstpWin.Tests;
@@ -19,6 +20,27 @@ public class DesktopTests
         Assert.Equal("ca.pem", session.CaBundlePath);
         Assert.Equal(stored.CustomRoutes, session.CustomRoutes);
         Assert.NotSame(stored.CustomRoutes, session.CustomRoutes);
+    }
+
+    [Theory]
+    [InlineData(AppThemes.Dark)]
+    [InlineData(AppThemes.Light)]
+    public void SettingsWindowCanBeThemedOnAnStaThread(string theme)
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                using var form = new SettingsForm(new Settings(), theme);
+                Assert.NotEqual(IntPtr.Zero, form.Handle);
+            }
+            catch (Exception ex) { failure = ex; }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        if (failure is not null) ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
     [Fact]

@@ -14,9 +14,9 @@
     <!-- Allows building (compile only) on non-Windows hosts such as CI containers. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <Version>1.10.5</Version>
-    <FileVersion>1.10.5.0</FileVersion>
-    <AssemblyVersion>1.10.5.0</AssemblyVersion>
+    <Version>1.12.1</Version>
+    <FileVersion>1.12.1.0</FileVersion>
+    <AssemblyVersion>1.12.1.0</AssemblyVersion>
     <Company>Open SSTP Client contributors</Company>
     <Product>Open SSTP Client for Windows</Product>
     <Copyright>MIT licensed. Based on Open-SSTP-Client by kittoku.</Copyright>

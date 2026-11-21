@@ -163,13 +163,23 @@ internal sealed class WintunSession : IDisposable
     }
 
     /// <summary>Removes the virtual adapter so no network profile is left behind.</summary>
-    public static void DeleteAdapter(string name)
+    public static bool DeleteAdapter(string name)
     {
         var adapter = WintunOpenAdapter(name);
-        if (adapter != IntPtr.Zero)
+        if (adapter == IntPtr.Zero)
         {
-            WintunCloseAdapter(adapter);
+            return false;
         }
+
+        // WintunDeleteAdapter removes the device and closes the handle itself; only
+        // close manually when deletion failed (for example, a session is still open).
+        if (WintunDeleteAdapter(adapter))
+        {
+            return true;
+        }
+
+        WintunCloseAdapter(adapter);
+        return false;
     }
 
     /// <summary>Returns the interface LUID, used for routing table entries.</summary>
@@ -189,6 +199,10 @@ internal sealed class WintunSession : IDisposable
 
     [DllImport(Dll, CallingConvention = CallingConvention.Winapi, SetLastError = true)]
     private static extern void WintunCloseAdapter(IntPtr adapter);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Winapi, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool WintunDeleteAdapter(IntPtr adapter);
 
     [DllImport(Dll, CallingConvention = CallingConvention.Winapi)]
     private static extern IntPtr WintunGetAdapterLuid(IntPtr adapter);

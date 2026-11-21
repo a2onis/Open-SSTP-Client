@@ -8,7 +8,6 @@ using System.Text;
 namespace OpenSstpWin.Interop;
 
 /// <summary>Where traffic for the VPN server itself must be sent.</summary>
-/// <summary>Where traffic for the VPN server itself must be sent.</summary>
 public sealed record ServerRoute(uint InterfaceIndex, string NextHop, string ServerAddress);
 
 /// <summary>
@@ -19,6 +18,9 @@ public sealed record ServerRoute(uint InterfaceIndex, string NextHop, string Ser
 public static class WindowsNetwork
 {
     private static (string Adapter, string Servers, bool FromDhcp)? _dnsSnapshot;
+
+    /// <summary>Last netsh failure, shown in the session log when routing breaks.</summary>
+    public static string LastError { get; private set; } = string.Empty;
 
     public static bool IsElevated
     {
@@ -82,15 +84,40 @@ public static class WindowsNetwork
     }
 
     /// <summary>Assigns the negotiated address to the tunnel adapter (point to point).</summary>
+    public static bool EnableInterface(string adapterName)
+    {
+        return Run("netsh", $"interface set interface name=\"{adapterName}\" admin=enable");
+    }
+
     public static bool SetInterfaceAddress(string adapterName, string address)
     {
         return Run("netsh",
             $"interface ipv4 set address name=\"{adapterName}\" source=static address={address} mask=255.255.255.255 gateway=none");
     }
 
+    /// <summary>
+    /// Gives the tunnel preference over Wi-Fi/Ethernet. Routes are still more
+    /// specific than 0.0.0.0/0, but a lower metric avoids Windows treating the
+    /// Wintun adapter as a fallback for directly reachable prefixes.
+    /// </summary>
+    public static bool SetInterfaceMetric(string adapterName, int metric)
+    {
+        metric = Math.Clamp(metric, 1, 9999);
+        return Run("netsh", $"interface ipv4 set interface interface=\"{adapterName}\" metric={metric}");
+    }
+
     public static bool ConfigureIpv6(string adapterName, string address)
     {
         return Run("netsh", $"interface ipv6 add address \"{adapterName}\" {address} store=active");
+    }
+
+    public static bool SetMtu(string adapterName, int mtu)
+    {
+        mtu = Math.Clamp(mtu, 576, 2000);
+        var ipv4 = Run("netsh",
+            $"interface ipv4 set subinterface \"{adapterName}\" mtu={mtu} store=active");
+        Run("netsh", $"interface ipv6 set subinterface \"{adapterName}\" mtu={mtu} store=active");
+        return ipv4;
     }
 
     // ------------------------------------------------------------------ DNS
@@ -183,12 +210,24 @@ public static class WindowsNetwork
 
     // --------------------------------------------------------------- routes
 
-    /// <summary>Adds an IPv4 route (active store: removed automatically on reboot).</summary>
+    /// <summary>
+    /// Adds an IPv4 route (active store: removed automatically on reboot).
+    /// On-link prefixes must omit nexthop entirely: netsh rejects an explicit
+    /// nexthop of 0.0.0.0, which previously left the tunnel with no routes even
+    /// though the tunnel itself was connected.
+    /// </summary>
     public static bool AddRoute(uint interfaceIndex, string prefix, string nextHop)
     {
-        var gateway = string.IsNullOrWhiteSpace(nextHop) ? "0.0.0.0" : nextHop;
-        return Run("netsh",
-            $"interface ipv4 add route prefix={prefix} interface={interfaceIndex} nexthop={gateway} metric=1 store=active");
+        return Run("netsh", BuildAddRouteArguments(interfaceIndex, prefix, nextHop));
+    }
+
+    internal static string BuildAddRouteArguments(uint interfaceIndex, string prefix, string nextHop)
+    {
+        var gateway = string.IsNullOrWhiteSpace(nextHop) ? "0.0.0.0" : nextHop.Trim();
+        var onLink = gateway is "0.0.0.0" or "::";
+        return onLink
+            ? $"interface ipv4 add route prefix={prefix} interface={interfaceIndex} metric=1 store=active"
+            : $"interface ipv4 add route prefix={prefix} interface={interfaceIndex} nexthop={gateway} metric=1 store=active";
     }
 
     public static bool DeleteRoute(uint interfaceIndex, string prefix)
@@ -201,6 +240,20 @@ public static class WindowsNetwork
     /// Resolves how this machine currently reaches the VPN server, so a host
     /// route can pin the encrypted connection to the physical adapter.
     /// </summary>
+    /// <summary>Returns the interface Windows would use for an IPv4 destination.</summary>
+    public static uint GetBestInterfaceIndex(string destination)
+    {
+        if (!IPAddress.TryParse(destination, out var address) ||
+            address.AddressFamily != AddressFamily.InterNetwork)
+        {
+            return 0;
+        }
+
+        return GetBestInterface(IpToUInt32(address), out var bestInterface) == 0
+            ? bestInterface
+            : 0;
+    }
+
     public static ServerRoute? FindRouteToHost(string host)
     {
         IPAddress? address;
@@ -302,9 +355,17 @@ public static class WindowsNetwork
                 return false;
             }
 
-            _ = stdout.Result;
-            _ = stderr.Result;
-            return process.ExitCode == 0;
+            var output = stdout.Result;
+            var error = stderr.Result.Trim();
+            if (process.ExitCode == 0)
+            {
+                LastError = string.Empty;
+                return true;
+            }
+
+            LastError = (error.Length > 0 ? error : output.Trim()) +
+                        " (" + executable + " " + arguments + ")";
+            return false;
         }
         catch
         {
