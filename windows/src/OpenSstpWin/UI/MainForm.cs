@@ -231,13 +231,17 @@ internal sealed class MainForm : Form
 
     // ------------------------------------------------------------- settings
 
-    private void ApplySettingsToForm()
+    private void ApplySettingsToForm(bool syncRemember = true)
     {
         _host.Text = _settings.Host;
         _port.Value = Math.Clamp(_settings.Port, 1, 65535);
         _user.Text = _settings.Username;
         _password.Text = _settings.Password;
-        _remember.Checked = !string.IsNullOrEmpty(_settings.Password);
+        if (syncRemember)
+        {
+            _remember.Checked = !string.IsNullOrEmpty(_settings.Password);
+        }
+
         _verify.Checked = _settings.VerifyServerCertificate;
         _defaultRoute.Checked = _settings.AddDefaultRoute;
         RefreshProfileChooser();
@@ -325,7 +329,10 @@ internal sealed class MainForm : Form
             return;
         }
 
-        using var dialog = new ConfigurationsForm(_profiles, _settings.Clone(), _theme, importOnOpen);
+        ReadFormIntoSettings();
+        var current = _settings.Clone();
+        current.Password = _password.Text;
+        using var dialog = new ConfigurationsForm(_profiles, current, _theme, importOnOpen);
         var result = dialog.ShowDialog(this);
         RefreshProfileChooser();
 
@@ -347,14 +354,17 @@ internal sealed class MainForm : Form
             return;
         }
 
-        using var dialog = new FinderForm(_settings.Clone(), _profiles, _theme);
+        ReadFormIntoSettings();
+        var current = _settings.Clone();
+        current.Password = _password.Text;
+        using var dialog = new FinderForm(current, _profiles, _theme);
         var result = dialog.ShowDialog(this);
         RefreshProfileChooser();
 
         if (result == DialogResult.OK && dialog.AppliedSettings is Settings applied)
         {
             _settings.CopyFrom(applied);
-            ApplySettingsToForm();
+            ApplySettingsToForm(syncRemember: false);
             TrySaveSettings();
             SetStatus("Endpoint applied");
         }
@@ -367,14 +377,17 @@ internal sealed class MainForm : Form
             return;
         }
 
-        using var dialog = new SettingsForm(_settings.Clone(), _theme);
+        ReadFormIntoSettings();
+        var current = _settings.Clone();
+        current.Password = _password.Text;
+        using var dialog = new SettingsForm(current, _theme);
         if (dialog.ShowDialog(this) != DialogResult.OK)
         {
             return;
         }
 
         _settings.CopyFrom(dialog.Result);
-        ApplySettingsToForm();
+        ApplySettingsToForm(syncRemember: false);
         TrySaveSettings();
         SetStatus("Advanced settings updated");
     }
