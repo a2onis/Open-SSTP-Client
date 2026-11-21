@@ -99,8 +99,9 @@ tag is pushed and the secrets are configured.
 .NET 8 and shipped as a portable, self-contained folder. Download
 `OpenSstpWin-win-x64-portable-<version>.zip` from [the releases page](https://github.com/a2onis/Open-SSTP-Client/releases),
 unzip it anywhere and run `OpenSstpWin.exe` as administrator (administrator
-rights are required to create the virtual adapter). No installer and no .NET
-runtime are needed.
+rights are required to create the virtual adapter). The window lets you enter
+the server, port and credentials, connect, and disconnect. A console may briefly
+appear during startup. No installer and no .NET runtime are needed.
 
 The port keeps the Android client's protocol behaviour — TLS 1.2 with the
 `SSTP_DUPLEX_POST` request, `CALL_CONNECT_REQUEST`/`ACK`, LCP, PAP,
@@ -115,7 +116,8 @@ OpenSstpWin.exe --help
 ```
 
 Settings are stored in `%LOCALAPPDATA%\OpenSstpWin\settings.json` and can also
-be changed per run with command line options. The Windows build adds routes to
+be changed per run with command line options. The window saves passwords only
+when explicitly requested; saved passwords are plaintext. The Windows build adds routes to
 the active store only, keeps a host route so the VPN server itself stays on the
 physical adapter, and restores the previous DNS configuration on disconnect.
 See `windows/README-WINDOWS.txt` for the full option list and troubleshooting.

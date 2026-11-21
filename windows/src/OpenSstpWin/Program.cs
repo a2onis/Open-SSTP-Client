@@ -3,6 +3,12 @@ using OpenSstpWin;
 using OpenSstpWin.Core;
 using OpenSstpWin.Interop;
 
+if (args.Length == 0)
+{
+    DesktopApp.Run();
+    return 0;
+}
+
 return await App.RunAsync(args).ConfigureAwait(false);
 
 namespace OpenSstpWin

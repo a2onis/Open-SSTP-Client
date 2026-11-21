@@ -9,26 +9,27 @@ OpenSstpWin.exe as administrator.
 Quick start
 -----------
 
-1. Right-click OpenSstpWin.exe and choose "Run as administrator".
-   Administrator rights are needed to create the virtual network adapter.
+1. Double-click OpenSstpWin.exe and approve the administrator prompt. A console
+   may briefly appear before the window opens. Administrator rights are needed
+   to create the virtual network adapter.
 
-2. Connect from the command line:
+2. Enter the server, port, username and password, then click Connect. Connection
+   status and errors appear in the window. Click Disconnect or close the window
+   to disconnect and clean up the adapter and routes.
+
+3. The server and other settings are saved when you connect. The password is
+   saved only if you check "Remember password". Saved passwords are plaintext in
+   %LOCALAPPDATA%\OpenSstpWin\settings.json; protect that file accordingly.
+   An existing password saved by the command-line tool is loaded into the form.
+
+The command-line interface is still available from an administrator terminal:
 
       OpenSstpWin.exe --host vpn.example.com --user myname --interactive
+      OpenSstpWin.exe --help
 
-   --interactive prompts for the password without echoing it.
-   Press Ctrl+C to disconnect.
-
-3. To keep the settings for next time, store them once:
-
-      OpenSstpWin.exe --set host vpn.example.com
-      OpenSstpWin.exe --set username myname
-      OpenSstpWin.exe --connect --interactive
-
-   Stored settings live in %LOCALAPPDATA%\OpenSstpWin\settings.json
-   The password is stored in plain text there, exactly like the Android app's
-   profiles. Clear the "password" field if you prefer to type it each time.
-
+--interactive prompts for the password without echoing it. Press Ctrl+C to
+disconnect. Use --set host vpn.example.com (and --set username myname) to
+store settings for the next run. --set password stores the password in plaintext.
 
 Common options
 --------------
@@ -67,6 +68,11 @@ again and disconnecting, or rebooting, clears them.
 
 Troubleshooting
 ---------------
+
+"No window appears"
+    Extract the entire ZIP before starting OpenSstpWin.exe, and approve the
+    Windows administrator prompt. Older portable builds were command-line only;
+    run them from a terminal with --help or download a newer build.
 
 "Administrator rights are required"
     Start the program with "Run as administrator".

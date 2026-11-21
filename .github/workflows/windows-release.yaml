@@ -58,6 +58,16 @@ jobs:
           $version = ($version -replace '[^0-9A-Za-z\.\-]', '.')
           ./build-portable.ps1 -Version $version -SkipTests
 
+      - name: Check packaged command-line interface
+        working-directory: windows
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path dist/OpenSstpWin-win-x64-portable/OpenSstpWin.exe
+          $output = & $exe --help | Out-String
+          if ($LASTEXITCODE -ne 0 -or $output -notmatch 'Usage:') {
+            throw "Packaged CLI help failed: $output"
+          }
+
       - name: Show package contents
         working-directory: windows
         run: |
