@@ -27,8 +27,16 @@ jobs:
 
       - name: Build (warnings are errors)
         working-directory: windows
+        shell: pwsh
         run: |
-          dotnet build src/OpenSstpWin/OpenSstpWin.csproj -c Release -warnaserror
+          dotnet build src/OpenSstpWin/OpenSstpWin.csproj -c Release -warnaserror 2>&1 | Tee-Object -FilePath build-output.txt
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) {
+            Get-Content build-output.txt | Where-Object { $_ -match 'error|warning' } | Select-Object -Unique | ForEach-Object {
+              Write-Host "::error::$($_ -replace '%', '%25')"
+            }
+            exit $exitCode
+          }
 
       - name: Unit tests (protocol and crypto)
         working-directory: windows
@@ -54,9 +62,19 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           $version = "${{ github.ref_name }}" -replace '^v', ''
-          if (-not $version -or $version -notmatch '^[0-9]') { $version = "1.10.5" }
-          $version = ($version -replace '[^0-9A-Za-z\.\-]', '.')
+          # PR refs look like "3/merge", not a valid .NET package version.
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { $version = "1.10.5" }
           ./build-portable.ps1 -Version $version -SkipTests
+
+      - name: Check packaged command-line interface
+        working-directory: windows
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path dist/OpenSstpWin-win-x64-portable/OpenSstpWin.exe
+          $output = & $exe --help | Out-String
+          if ($LASTEXITCODE -ne 0 -or $output -notmatch 'Usage:') {
+            throw "Packaged CLI help failed: $output"
+          }
 
       - name: Show package contents
         working-directory: windows
