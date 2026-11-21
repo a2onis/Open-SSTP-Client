@@ -59,6 +59,13 @@ public static class EndpointParser
             line = "[" + line + "]";
         }
 
+        // .NET's Uri drops an empty trailing port, while the Android parser
+        // rejects "host:" outright. Check the original authority before parsing.
+        if (HasEmptyPort(line, hasScheme))
+        {
+            return null;
+        }
+
         if (!Uri.TryCreate(hasScheme ? line : "https://" + line, UriKind.Absolute, out var uri))
         {
             return null;
@@ -103,6 +110,30 @@ public static class EndpointParser
         }
 
         return new Endpoint(host, port);
+    }
+
+    private static bool HasEmptyPort(string line, bool hasScheme)
+    {
+        var authority = line;
+        if (hasScheme)
+        {
+            var separator = authority.IndexOf("://", StringComparison.Ordinal);
+            authority = authority[(separator + 3)..];
+            var end = authority.IndexOfAny(new[] { '/', '?', '#' });
+            if (end >= 0)
+            {
+                authority = authority[..end];
+            }
+        }
+
+        // A bracketed IPv6 literal legitimately ends with ':' ("2001:db8::");
+        // only a colon after the closing bracket means an empty port.
+        if (!authority.EndsWith(':'))
+        {
+            return false;
+        }
+
+        return !(authority.StartsWith('[') && authority.EndsWith(']'));
     }
 
     /// <summary>

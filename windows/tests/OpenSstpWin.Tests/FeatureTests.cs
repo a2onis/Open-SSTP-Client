@@ -102,8 +102,8 @@ public class FeatureTests
         var withEndpoint = settings.Validate();
         var advancedOnly = settings.Validate(requireEndpoint: false);
 
-        Assert.Contains(withEndpoint, error => error.Contains("server", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(advancedOnly, error => error.Contains("server", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(withEndpoint, error => error.Contains("hostname", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(advancedOnly, error => error.Contains("hostname", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(advancedOnly, error => error.Contains("DNS", StringComparison.OrdinalIgnoreCase));
     }
 
