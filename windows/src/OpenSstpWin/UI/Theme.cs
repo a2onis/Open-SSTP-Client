@@ -307,7 +307,8 @@ internal static class Theme
         {
             if (!e.Item.Selected && !e.Item.Pressed)
             {
-                using var clear = new SolidBrush(e.ToolStrip.BackColor);
+                var stripBackground = e.ToolStrip?.BackColor ?? (_dark ? DarkSurface : SystemColors.Control);
+                using var clear = new SolidBrush(stripBackground);
                 e.Graphics.FillRectangle(clear, new Rectangle(Point.Empty, e.Item.Size));
                 return;
             }
