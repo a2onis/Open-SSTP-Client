@@ -1,6 +1,7 @@
 using System.IO;
 using OpenSstpWin;
 using OpenSstpWin.Core;
+using OpenSstpWin.Interop;
 using Xunit;
 
 namespace OpenSstpWin.Tests;
@@ -11,6 +12,17 @@ namespace OpenSstpWin.Tests;
 /// </summary>
 public class FeatureTests
 {
+    [Fact]
+    public void OnLinkRoutesOmitTheNextHopThatNetshRejects()
+    {
+        var tunnel = WindowsNetwork.BuildAddRouteArguments(42, "0.0.0.0/1", "0.0.0.0");
+        Assert.Contains("interface=42", tunnel);
+        Assert.DoesNotContain("nexthop=", tunnel);
+
+        var server = WindowsNetwork.BuildAddRouteArguments(9, "192.0.2.1/32", "192.0.2.254");
+        Assert.Contains("nexthop=192.0.2.254", server);
+    }
+
     [Theory]
     [InlineData("Vietnam | VPN.EXAMPLE.ORG:443", "vpn.example.org", 443)]
     [InlineData("192.0.2.1", "192.0.2.1", 443)]

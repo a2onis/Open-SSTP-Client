@@ -218,12 +218,16 @@ public static class WindowsNetwork
     /// </summary>
     public static bool AddRoute(uint interfaceIndex, string prefix, string nextHop)
     {
+        return Run("netsh", BuildAddRouteArguments(interfaceIndex, prefix, nextHop));
+    }
+
+    internal static string BuildAddRouteArguments(uint interfaceIndex, string prefix, string nextHop)
+    {
         var gateway = string.IsNullOrWhiteSpace(nextHop) ? "0.0.0.0" : nextHop.Trim();
         var onLink = gateway is "0.0.0.0" or "::";
-        var arguments = onLink
+        return onLink
             ? $"interface ipv4 add route prefix={prefix} interface={interfaceIndex} metric=1 store=active"
             : $"interface ipv4 add route prefix={prefix} interface={interfaceIndex} nexthop={gateway} metric=1 store=active";
-        return Run("netsh", arguments);
     }
 
     public static bool DeleteRoute(uint interfaceIndex, string prefix)
