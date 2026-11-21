@@ -62,8 +62,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           $version = "${{ github.ref_name }}" -replace '^v', ''
-          if (-not $version -or $version -notmatch '^[0-9]') { $version = "1.10.5" }
-          $version = ($version -replace '[^0-9A-Za-z\.\-]', '.')
+          # PR refs look like "3/merge", not a valid .NET package version.
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { $version = "1.10.5" }
           ./build-portable.ps1 -Version $version -SkipTests
 
       - name: Check packaged command-line interface
