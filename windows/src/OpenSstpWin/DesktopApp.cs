@@ -19,6 +19,10 @@ internal static class DesktopApp
         if (GetConsoleProcessList(processes, (uint)processes.Length) == 1)
             FreeConsole();
 
+        // A single failing event handler must never take the whole app down.
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) => ReportCrash(e.Exception);
+
         // The existing asynchronous CLI entry point is not STA. WinForms needs its own STA thread.
         var thread = new Thread(() =>
         {
@@ -31,12 +35,45 @@ internal static class DesktopApp
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Could not start Open SSTP Client: " + ex.Message,
-                    "Open SSTP Client", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ReportCrash(ex, "Could not start Open SSTP Client");
             }
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         thread.Join();
+    }
+
+    private static void ReportCrash(Exception exception, string? title = null)
+    {
+        string? logPath = null;
+        try
+        {
+            var folder = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "OpenSstpWin");
+            Directory.CreateDirectory(folder);
+            logPath = Path.Combine(folder, "crash-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
+            File.WriteAllText(logPath, DateTime.Now + Environment.NewLine + exception);
+        }
+        catch
+        {
+            // Reporting must never throw again.
+        }
+
+        try
+        {
+            MessageBox.Show(
+                (title ?? "Open SSTP Client hit an unexpected error") + ":\n\n" +
+                exception.Message +
+                (logPath is null ? string.Empty : "\n\nA report was saved to:\n" + logPath) +
+                "\n\nThe app will keep running. Disconnect and reconnect if the tunnel misbehaves.",
+                "Open SSTP Client",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+        catch
+        {
+            // Ignore failures while showing the report.
+        }
     }
 }

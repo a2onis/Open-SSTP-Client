@@ -4,9 +4,11 @@ using OpenSstpWin.Core;
 namespace OpenSstpWin.UI;
 
 /// <summary>
-/// The portable client window. It keeps the Android app's home screen, menu
-/// (Configurations, Save/Import/Export Profile, Reload Defaults, Theme) and
-/// advanced settings, and adds an automatic reconnection loop.
+/// The portable client window. The redesign keeps everything on one screen: a
+/// configuration picker, the credentials that matter, one primary Connect action,
+/// and a live session card that proves whether traffic is actually flowing.
+/// Advanced options stay one click away and the connection log is collapsed
+/// until it is needed, so the window is quiet unless something happens.
 /// </summary>
 internal sealed class MainForm : Form
 {
@@ -20,54 +22,127 @@ internal sealed class MainForm : Form
     private readonly ComboBox _profileChooser = new()
     {
         DropDownStyle = ComboBoxStyle.DropDownList,
-        Width = 260,
-        Margin = new Padding(3, 4, 3, 3),
+        Dock = DockStyle.Fill,
+        Margin = new Padding(0, 0, 8, 0),
     };
-    private readonly Button _loadProfile = new() { Text = "Load", AutoSize = true, Margin = new Padding(4, 3, 4, 3) };
     private readonly Button _manageProfiles = new()
     {
-        Text = "Configurations…",
+        Text = "Manage…",
         AutoSize = true,
-        Margin = new Padding(4, 3, 4, 3),
+        Margin = new Padding(0),
     };
 
     private readonly TextBox _host = Ui.Text();
     private readonly NumericUpDown _port = Ui.Number(1, 65535, 443);
     private readonly TextBox _user = Ui.Text();
     private readonly TextBox _password = new() { UseSystemPasswordChar = true, Dock = DockStyle.Fill };
-    private readonly CheckBox _showPassword = Ui.Check("Show password", false);
+    private readonly CheckBox _showPassword = Ui.Check("Show", false);
     private readonly CheckBox _remember = Ui.Check("Remember password (stored as plaintext)", false);
-    private readonly CheckBox _verify = Ui.Check("Verify server certificate", true);
-    private readonly CheckBox _defaultRoute = Ui.Check("Route internet traffic through the VPN", true);
-    private readonly Button _connect = new() { Text = "Connect", AutoSize = true, Margin = new Padding(4) };
+    private readonly CheckBox _verify = Ui.Check("Verify the server certificate", true);
+    private readonly CheckBox _defaultRoute = Ui.Check("Route all internet traffic through the VPN", true);
+
+    private readonly Button _connect = new()
+    {
+        Text = "Connect",
+        Tag = "primary",
+        Height = 38,
+        Width = 170,
+        Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+        Margin = new Padding(0, 0, 8, 0),
+    };
     private readonly Button _disconnect = new()
     {
         Text = "Disconnect",
-        AutoSize = true,
+        Height = 38,
+        Width = 120,
         Enabled = false,
-        Margin = new Padding(4),
+        Margin = new Padding(0),
     };
-    private readonly Label _status = new() { Text = "Disconnected", AutoSize = true, Anchor = AnchorStyles.Left };
+
+    private readonly LinkLabel _moreOptions = new()
+    {
+        Text = "More options",
+        AutoSize = true,
+        Margin = new Padding(0, 4, 0, 0),
+    };
+    private readonly FlowLayoutPanel _advancedPanel = new()
+    {
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        Dock = DockStyle.Fill,
+        FlowDirection = FlowDirection.TopDown,
+        WrapContents = false,
+        Visible = false,
+        Margin = new Padding(0, 2, 0, 2),
+    };
+
+    private readonly Label _stateLabel = new()
+    {
+        Text = "Not connected",
+        AutoSize = false,
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleRight,
+        Font = new Font("Segoe UI", 12f, FontStyle.Bold),
+    };
+    private readonly Label _stateHint = new()
+    {
+        Text = "Choose a configuration or enter a server.",
+        AutoSize = false,
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleRight,
+        Tag = "muted",
+        AutoEllipsis = true,
+    };
+
+    private readonly Label _serverValue = DetailValue();
+    private readonly Label _addressValue = DetailValue();
+    private readonly Label _peerValue = DetailValue();
+    private readonly Label _dnsValue = DetailValue();
+    private readonly Label _sentValue = DetailValue();
+    private readonly Label _receivedValue = DetailValue();
+    private readonly Label _durationValue = DetailValue();
+
     private readonly TextBox _log = new()
     {
         Multiline = true,
         ReadOnly = true,
         ScrollBars = ScrollBars.Vertical,
         Dock = DockStyle.Fill,
+        Font = new Font("Consolas", 9f),
+        BorderStyle = BorderStyle.FixedSingle,
+    };
+    private readonly Panel _logHost = new()
+    {
+        Dock = DockStyle.Fill,
+        Height = 170,
+        Visible = false,
+        Padding = new Padding(16, 0, 16, 12),
+    };
+    private readonly Button _logToggle = new()
+    {
+        Text = "Show connection log",
+        AutoSize = true,
+        Dock = DockStyle.Top,
+        TextAlign = ContentAlignment.MiddleLeft,
+        FlatStyle = FlatStyle.Flat,
+        Margin = new Padding(16, 2, 16, 4),
     };
 
     private readonly MenuStrip _menu = new();
-    private readonly StatusStrip _statusStrip = new();
-    private readonly ToolStripStatusLabel _statusLabel = new() { Text = "Disconnected" };
     private readonly ToolStripMenuItem _systemTheme = new("System default");
     private readonly ToolStripMenuItem _lightTheme = new("Light");
     private readonly ToolStripMenuItem _darkTheme = new("Dark");
 
+    private readonly System.Windows.Forms.Timer _tick = new() { Interval = 1000 };
+
     private VpnSession? _session;
     private StreamWriter? _logWriter;
+    private TunnelState _state = TunnelState.Idle;
+    private DateTime? _connectedAt;
     private bool _busy;
     private bool _closing;
     private bool _userStopped;
+    private bool _suppressProfileLoad;
 
     public MainForm() : this(Settings.Load())
     {
@@ -80,20 +155,33 @@ internal sealed class MainForm : Form
         _profiles = ProfileStore.CreateDefault();
 
         Text = AppTitle;
-        MinimumSize = new Size(640, 580);
-        ClientSize = new Size(760, 680);
+        MinimumSize = new Size(820, 640);
+        ClientSize = new Size(920, 720);
         StartPosition = FormStartPosition.CenterScreen;
+        AutoScaleMode = AutoScaleMode.Dpi;
 
         BuildLayout();
         ApplySettingsToForm();
         Theme.Apply(this, _theme);
+        SetState(TunnelState.Idle, "Choose a configuration or enter a server.");
 
         _connect.Click += ConnectClicked;
         _disconnect.Click += DisconnectClicked;
-        _loadProfile.Click += (_, _) => LoadSelectedProfile();
         _manageProfiles.Click += (_, _) => OpenConfigurations();
+        _moreOptions.LinkClicked += (_, _) => ToggleAdvancedOptions();
+        _logToggle.Click += (_, _) => SetLogVisible(!_logHost.Visible);
+        _profileChooser.SelectedIndexChanged += (_, _) =>
+        {
+            if (!_suppressProfileLoad)
+            {
+                LoadSelectedProfile();
+            }
+        };
         _showPassword.CheckedChanged += (_, _) => _password.UseSystemPasswordChar = !_showPassword.Checked;
         FormClosing += OnFormClosing;
+        FormClosed += (_, _) => _tick.Dispose();
+        _tick.Tick += (_, _) => UpdateDetails();
+        _tick.Start();
     }
 
     // --------------------------------------------------------------- layout
@@ -103,95 +191,314 @@ internal sealed class MainForm : Form
         BuildMenu();
         MainMenuStrip = _menu;
 
-        var layout = new TableLayoutPanel
+        var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(16),
-            ColumnCount = 2,
+            ColumnCount = 1,
+            RowCount = 4,
+            Padding = new Padding(0),
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 0));
 
-        var profiles = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill, WrapContents = false };
-        profiles.Controls.AddRange(new Control[] { _profileChooser, _loadProfile, _manageProfiles });
+        root.Controls.Add(BuildHeader(), 0, 0);
+        root.Controls.Add(BuildBody(), 0, 1);
+        root.Controls.Add(_logToggle, 0, 2);
 
-        AddField(layout, "Configuration", profiles, 0);
-        AddField(layout, "Server", _host, 1);
-        AddField(layout, "Port", _port, 2);
-        AddField(layout, "Username", _user, 3);
-        AddField(layout, "Password", _password, 4);
-        AddWide(layout, _showPassword, 5);
-        AddWide(layout, _remember, 6);
-        AddWide(layout, _verify, 7);
-        AddWide(layout, _defaultRoute, 8);
+        _logHost.Controls.Add(_log);
+        root.Controls.Add(_logHost, 0, 3);
 
-        var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Fill };
-        actions.Controls.AddRange(new Control[] { _connect, _disconnect, _status });
-        _status.Margin = new Padding(12, 9, 0, 0);
-        AddWide(layout, actions, 9);
-
-        AddWide(layout, new Label
-        {
-            Text = "Connection log",
-            AutoSize = true,
-            Margin = new Padding(3, 10, 3, 3),
-        }, 10);
-
-        layout.RowCount = 12;
-        while (layout.RowStyles.Count <= 11)
-        {
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        }
-
-        layout.RowStyles[11] = new RowStyle(SizeType.Percent, 100);
-        layout.Controls.Add(_log, 0, 11);
-        layout.SetColumnSpan(_log, 2);
-
-        _statusStrip.Items.Add(_statusLabel);
-        _statusStrip.Dock = DockStyle.Bottom;
-
-        Controls.Add(layout);
-        Controls.Add(_statusStrip);
+        Controls.Add(root);
         Controls.Add(_menu);
     }
 
-    private void AddField(TableLayoutPanel layout, string label, Control control, int row) =>
-        AddRow(layout, new Label
-        {
-            Text = label,
-            AutoSize = true,
-            Anchor = AnchorStyles.Left,
-            Margin = new Padding(3, 8, 8, 3),
-        }, control, row, wide: false);
-
-    private void AddWide(TableLayoutPanel layout, Control control, int row) =>
-        AddRow(layout, control, null, row, wide: true);
-
-    private static void AddRow(TableLayoutPanel layout, Control first, Control? second, int row, bool wide)
+    private Control BuildHeader()
     {
-        layout.RowCount = Math.Max(layout.RowCount, row + 1);
-        while (layout.RowStyles.Count <= row)
+        var header = new TableLayoutPanel
         {
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 2,
+            RowCount = 2,
+            Padding = new Padding(20, 14, 20, 8),
+        };
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        header.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 360));
+        header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+        var title = new Label
+        {
+            Text = AppTitle,
+            AutoSize = true,
+            Font = new Font("Segoe UI", 17f, FontStyle.Bold),
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(0),
+        };
+        var subtitle = new Label
+        {
+            Text = "Secure SSTP VPN for Windows · portable x64",
+            AutoSize = true,
+            Tag = "muted",
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(2, 0, 0, 0),
+        };
+
+        header.Controls.Add(title, 0, 0);
+        header.Controls.Add(subtitle, 0, 1);
+        header.Controls.Add(_stateLabel, 1, 0);
+        header.Controls.Add(_stateHint, 1, 1);
+
+        return header;
+    }
+
+    private Control BuildBody()
+    {
+        var body = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            Padding = new Padding(16, 4, 16, 0),
+        };
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56));
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44));
+        body.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var connection = BuildConnectionCard();
+        connection.Margin = new Padding(0, 0, 8, 0);
+        var session = BuildSessionCard();
+        session.Margin = new Padding(8, 0, 0, 0);
+
+        body.Controls.Add(connection, 0, 0);
+        body.Controls.Add(session, 1, 0);
+        return body;
+    }
+
+    private GroupBox BuildConnectionCard()
+    {
+        var card = new GroupBox
+        {
+            Text = "  Connection  ",
+            Dock = DockStyle.Fill,
+            Padding = new Padding(14, 10, 14, 12),
+        };
+
+        var table = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 0,
+            Padding = new Padding(0),
+        };
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        void Row(string label, Control control)
+        {
+            var row = table.RowCount++;
+            table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            table.Controls.Add(new Label
+            {
+                Text = label,
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 8, 10, 8),
+            }, 0, row);
+            control.Dock = DockStyle.Fill;
+            control.Margin = new Padding(0, 4, 0, 4);
+            table.Controls.Add(control, 1, row);
         }
 
-        layout.RowStyles[row] = new RowStyle(SizeType.AutoSize);
-        layout.Controls.Add(first, 0, row);
-        if (wide)
+        void Wide(Control control)
         {
-            first.Dock = DockStyle.Fill;
-            layout.SetColumnSpan(first, 2);
+            var row = table.RowCount++;
+            table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            control.Dock = DockStyle.Fill;
+            control.Margin = new Padding(0, 2, 0, 2);
+            table.Controls.Add(control, 0, row);
+            table.SetColumnSpan(control, 2);
+        }
+
+        var configurationRow = new TableLayoutPanel
+        {
+            ColumnCount = 2,
+            RowCount = 1,
+            AutoSize = true,
+            Dock = DockStyle.Fill,
+        };
+        configurationRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        configurationRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        configurationRow.Controls.Add(_profileChooser, 0, 0);
+        configurationRow.Controls.Add(_manageProfiles, 1, 0);
+
+        var serverRow = new TableLayoutPanel
+        {
+            ColumnCount = 2,
+            RowCount = 1,
+            AutoSize = true,
+            Dock = DockStyle.Fill,
+        };
+        serverRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        serverRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92));
+        _port.Margin = new Padding(8, 0, 0, 0);
+        serverRow.Controls.Add(_host, 0, 0);
+        serverRow.Controls.Add(_port, 1, 0);
+
+        var passwordRow = new TableLayoutPanel
+        {
+            ColumnCount = 2,
+            RowCount = 1,
+            AutoSize = true,
+            Dock = DockStyle.Fill,
+        };
+        passwordRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        passwordRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _showPassword.Margin = new Padding(8, 0, 0, 0);
+        passwordRow.Controls.Add(_password, 0, 0);
+        passwordRow.Controls.Add(_showPassword, 1, 0);
+
+        Row("Configuration", configurationRow);
+        Row("Server", serverRow);
+        Row("Username", _user);
+        Row("Password", passwordRow);
+        Wide(_remember);
+        Wide(_moreOptions);
+
+        _advancedPanel.Controls.Add(_verify);
+        _advancedPanel.Controls.Add(_defaultRoute);
+        Wide(_advancedPanel);
+
+        var actions = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Fill,
+            WrapContents = false,
+            Margin = new Padding(0, 10, 0, 0),
+        };
+        actions.Controls.Add(_connect);
+        actions.Controls.Add(_disconnect);
+        Wide(actions);
+
+        Wide(new Label
+        {
+            Text = "Administrator rights are required. While connected, all traffic uses the tunnel.",
+            AutoSize = true,
+            Tag = "muted",
+            Margin = new Padding(0, 6, 0, 0),
+        });
+
+        card.Controls.Add(table);
+        return card;
+    }
+
+    private GroupBox BuildSessionCard()
+    {
+        var card = new GroupBox
+        {
+            Text = "  Session  ",
+            Dock = DockStyle.Fill,
+            Padding = new Padding(14, 10, 14, 12),
+        };
+
+        var table = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            ColumnCount = 2,
+            RowCount = 0,
+            AutoSize = true,
+        };
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        void Detail(string caption, Label value)
+        {
+            var row = table.RowCount++;
+            table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            table.Controls.Add(new Label
+            {
+                Text = caption,
+                AutoSize = true,
+                Tag = "muted",
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 7, 10, 7),
+            }, 0, row);
+            value.Margin = new Padding(0, 7, 0, 7);
+            table.Controls.Add(value, 1, row);
+        }
+
+        Detail("Server", _serverValue);
+        Detail("Tunnel address", _addressValue);
+        Detail("Peer", _peerValue);
+        Detail("DNS", _dnsValue);
+        Detail("Sent", _sentValue);
+        Detail("Received", _receivedValue);
+        Detail("Connected for", _durationValue);
+
+        var hint = new Label
+        {
+            Text = "The counters above update once the tunnel is carrying traffic.",
+            AutoSize = true,
+            MaximumSize = new Size(330, 0),
+            Tag = "muted",
+            Dock = DockStyle.Top,
+            Margin = new Padding(0, 18, 0, 0),
+        };
+
+        var stack = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+        stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        stack.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        stack.Controls.Add(table, 0, 0);
+        stack.Controls.Add(hint, 0, 1);
+
+        card.Controls.Add(stack);
+        return card;
+    }
+
+    private static Label DetailValue() => new()
+    {
+        Text = "—",
+        AutoSize = false,
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleRight,
+        AutoEllipsis = true,
+        Tag = "value",
+    };
+
+    private void ToggleAdvancedOptions()
+    {
+        _advancedPanel.Visible = !_advancedPanel.Visible;
+        _moreOptions.Text = _advancedPanel.Visible ? "Fewer options" : "More options";
+    }
+
+    private void SetLogVisible(bool visible)
+    {
+        _logHost.Visible = visible;
+        _logHost.Height = visible ? 180 : 0;
+        if (_logHost.Parent is TableLayoutPanel parent && parent.RowStyles.Count > 3)
+        {
+            parent.RowStyles[3].Height = visible ? 180 : 0;
+        }
+
+        _logToggle.Text = (visible ? "Hide" : "Show") + " connection log";
+        if (!visible)
+        {
             return;
         }
 
-        second!.Dock = DockStyle.Fill;
-        layout.Controls.Add(second, 1, row);
+        _log.SelectionStart = _log.TextLength;
+        _log.ScrollToCaret();
     }
 
     private void BuildMenu()
     {
         var file = new ToolStripMenuItem("&File");
-        file.DropDownItems.Add(Menu("&Save Profile…", (_, _) => SaveProfileClicked()));
+        file.DropDownItems.Add(Menu("&Save Configuration…", (_, _) => SaveProfileClicked()));
         file.DropDownItems.Add(Menu("&Import Profile…", (_, _) => ImportProfileClicked()));
         file.DropDownItems.Add(Menu("&Export Profile…", (_, _) => ExportProfileClicked()));
         file.DropDownItems.Add(new ToolStripSeparator());
@@ -199,10 +506,14 @@ internal sealed class MainForm : Form
 
         var configurations = new ToolStripMenuItem("&Configurations");
         configurations.DropDownItems.Add(Menu("&Manage Configurations…", (_, _) => OpenConfigurations()));
-        configurations.DropDownItems.Add(Menu("Save Current as Profile…", (_, _) => SaveProfileClicked()));
+        configurations.DropDownItems.Add(Menu("Save Current as Configuration…", (_, _) => SaveProfileClicked()));
         configurations.DropDownItems.Add(new ToolStripSeparator());
         configurations.DropDownItems.Add(Menu("&Import Endpoint List…", (_, _) => OpenImportEndpointList()));
         configurations.DropDownItems.Add(Menu("Find &Fastest from Sources…", (_, _) => OpenFinder()));
+
+        var view = new ToolStripMenuItem("&View");
+        view.DropDownItems.Add(Menu("Show/Hide Connection &Log", (_, _) => SetLogVisible(!_logHost.Visible)));
+        view.DropDownItems.Add(Menu("Show/Hide &Advanced Options", (_, _) => ToggleAdvancedOptions()));
 
         var settings = new ToolStripMenuItem("&Settings");
         settings.DropDownItems.Add(Menu("&Advanced Settings…", (_, _) => OpenAdvancedSettings()));
@@ -219,7 +530,7 @@ internal sealed class MainForm : Form
         var help = new ToolStripMenuItem("&Help");
         help.DropDownItems.Add(Menu("&About", (_, _) => ShowAbout()));
 
-        _menu.Items.AddRange(new ToolStripItem[] { file, configurations, settings, help });
+        _menu.Items.AddRange(new ToolStripItem[] { file, configurations, view, settings, help });
     }
 
     private static ToolStripMenuItem Menu(string text, EventHandler handler)
@@ -246,6 +557,7 @@ internal sealed class MainForm : Form
         _defaultRoute.Checked = _settings.AddDefaultRoute;
         RefreshProfileChooser();
         UpdateThemeChecks();
+        UpdateDetails();
     }
 
     private void ReadFormIntoSettings()
@@ -262,6 +574,7 @@ internal sealed class MainForm : Form
         _profiles = ProfileStore.CreateDefault();
         var previous = selectedName ?? (_profileChooser.SelectedItem as string);
 
+        _suppressProfileLoad = true;
         _profileChooser.BeginUpdate();
         _profileChooser.Items.Clear();
         _profileChooser.Items.Add(CurrentSettingsItem);
@@ -290,6 +603,8 @@ internal sealed class MainForm : Form
         {
             _profileChooser.SelectedIndex = index;
         }
+
+        _suppressProfileLoad = false;
     }
 
     private void LoadSelectedProfile()
@@ -302,15 +617,12 @@ internal sealed class MainForm : Form
         var name = _profileChooser.SelectedItem as string;
         if (string.IsNullOrEmpty(name) || name == CurrentSettingsItem)
         {
-            SetStatus("Choose a saved configuration in the list first.");
             return;
         }
 
         var profile = _profiles.Find(name);
         if (profile is null)
         {
-            MessageBox.Show(this, "That configuration no longer exists.", Text,
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
             RefreshProfileChooser();
             return;
         }
@@ -319,7 +631,6 @@ internal sealed class MainForm : Form
         ApplySettingsToForm();
         RefreshProfileChooser(profile.Name);
         TrySaveSettings();
-        SetStatus("Loaded configuration \"" + profile.Name + "\"");
     }
 
     private void OpenConfigurations(bool importOnOpen = false)
@@ -341,7 +652,6 @@ internal sealed class MainForm : Form
             _settings.CopyFrom(applied);
             ApplySettingsToForm();
             TrySaveSettings();
-            SetStatus("Configuration applied");
         }
     }
 
@@ -366,7 +676,6 @@ internal sealed class MainForm : Form
             _settings.CopyFrom(applied);
             ApplySettingsToForm(syncRemember: false);
             TrySaveSettings();
-            SetStatus("Endpoint applied");
         }
     }
 
@@ -389,7 +698,6 @@ internal sealed class MainForm : Form
         _settings.CopyFrom(dialog.Result);
         ApplySettingsToForm(syncRemember: false);
         TrySaveSettings();
-        SetStatus("Advanced settings updated");
     }
 
     private void SaveProfileClicked()
@@ -431,7 +739,6 @@ internal sealed class MainForm : Form
         }
 
         RefreshProfileChooser(name);
-        SetStatus("Saved configuration \"" + name + "\"");
     }
 
     private void ImportProfileClicked()
@@ -458,7 +765,6 @@ internal sealed class MainForm : Form
             _settings.CopyFrom(imported);
             ApplySettingsToForm();
             TrySaveSettings();
-            SetStatus("Profile imported");
         }
         catch (Exception exception)
         {
@@ -499,7 +805,6 @@ internal sealed class MainForm : Form
         try
         {
             SettingsFile.Export(snapshot, dialog.FileName);
-            SetStatus("Profile exported to " + dialog.FileName);
         }
         catch (Exception exception)
         {
@@ -524,7 +829,6 @@ internal sealed class MainForm : Form
         _settings.CopyFrom(new Settings());
         ApplySettingsToForm();
         TrySaveSettings();
-        SetStatus("Defaults restored");
     }
 
     private void ApplyTheme(string theme)
@@ -533,6 +837,8 @@ internal sealed class MainForm : Form
         _settings.AppTheme = _theme;
         UpdateThemeChecks();
         Theme.Apply(this, _theme);
+        ApplyStateVisuals();
+        UpdateDetails();
         TrySaveSettings();
     }
 
@@ -557,7 +863,7 @@ internal sealed class MainForm : Form
 
     private void ShowAbout()
     {
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.11.0";
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.12.0";
         MessageBox.Show(this,
             AppTitle + " for Windows " + version + " (portable, x64)\n\n" +
             "A Windows port of Open-SSTP-Client by kittoku, using the Wintun layer-3 adapter.\n\n" +
@@ -577,34 +883,46 @@ internal sealed class MainForm : Form
             return;
         }
 
-        ReadFormIntoSettings();
-        var sessionSettings = PrepareSettings(_settings, _password.Text, _remember.Checked);
-        var errors = sessionSettings.Validate();
-        if (errors.Count > 0)
-        {
-            MessageBox.Show(this, string.Join(Environment.NewLine, errors), "Cannot connect",
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-
         try
         {
-            _settings.Save();
+            ReadFormIntoSettings();
+            var sessionSettings = PrepareSettings(_settings, _password.Text, _remember.Checked);
+            var errors = sessionSettings.Validate();
+            if (errors.Count > 0)
+            {
+                MessageBox.Show(this, string.Join(Environment.NewLine, errors), "Cannot connect",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            try
+            {
+                _settings.Save();
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show(this, "Could not save settings: " + exception.Message, Text,
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            _userStopped = false;
+            _closing = false;
+            SetBusy(true);
+            await RunSessionLoopAsync(sessionSettings);
         }
         catch (Exception exception)
         {
-            MessageBox.Show(this, "Could not save settings: " + exception.Message, Text,
-                MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return;
+            AppendLog("Unexpected error: " + exception.Message);
+            SetState(TunnelState.Failed, "The connection stopped unexpectedly. See the log.");
+            SetLogVisible(true);
         }
-
-        _userStopped = false;
-        _closing = false;
-        SetBusy(true);
-        await RunSessionLoopAsync(sessionSettings);
-        if (!IsDisposed)
+        finally
         {
-            SetBusy(false);
+            if (!IsDisposed)
+            {
+                SetBusy(false);
+            }
         }
     }
 
@@ -616,15 +934,15 @@ internal sealed class MainForm : Form
         while (true)
         {
             var label = attempt == 0
-                ? "Connecting…"
+                ? "Connecting to " + sessionSettings.Host + "…"
                 : "Reconnecting (attempt " + attempt + "/" + maxAttempts + ")…";
-            SetStatus(label);
+            SetState(TunnelState.Connecting, label);
             AppendLog("=== " + label + " " + sessionSettings.Host + ":" + sessionSettings.Port + " ===");
             OpenLog(sessionSettings);
 
             var session = new VpnSession(
                 sessionSettings,
-                progress => Post(() => SetStatus(Describe(progress))),
+                progress => Post(() => SetState(progress.State, progress.Message)),
                 message => Post(() => AppendLog(message)));
             _session = session;
 
@@ -645,6 +963,7 @@ internal sealed class MainForm : Form
             finally
             {
                 _session = null;
+                _connectedAt = null;
                 try
                 {
                     await session.DisposeAsync();
@@ -665,12 +984,20 @@ internal sealed class MainForm : Form
 
             if (_userStopped)
             {
-                SetStatus("Disconnected");
+                SetState(TunnelState.Disconnected, "Disconnected.");
                 return;
             }
 
             var failed = state == TunnelState.Failed;
-            SetStatus(failed ? "Failed: " + message : "Disconnected");
+            if (failed)
+            {
+                SetState(TunnelState.Failed, message);
+                SetLogVisible(true);
+            }
+            else
+            {
+                SetState(TunnelState.Disconnected, "The connection ended.");
+            }
 
             if (!sessionSettings.EnableReconnection)
             {
@@ -699,11 +1026,12 @@ internal sealed class MainForm : Form
 
                 if (_userStopped)
                 {
-                    SetStatus("Disconnected");
+                    SetState(TunnelState.Disconnected, "Disconnected.");
                     return;
                 }
 
-                SetStatus("Reconnecting in " + remaining + "s (attempt " + attempt + "/" + maxAttempts + ")…");
+                SetState(TunnelState.Connecting,
+                    "Reconnecting in " + remaining + "s (attempt " + attempt + "/" + maxAttempts + ")…");
                 await Task.Delay(1000);
             }
         }
@@ -713,7 +1041,7 @@ internal sealed class MainForm : Form
     {
         _userStopped = true;
         _disconnect.Enabled = false;
-        SetStatus("Disconnecting…");
+        SetState(TunnelState.Disconnecting, "Closing the tunnel…");
         _session?.Stop();
     }
 
@@ -722,15 +1050,17 @@ internal sealed class MainForm : Form
         _busy = busy;
         foreach (var control in new Control[]
                  {
-                     _profileChooser, _loadProfile, _manageProfiles, _host, _port, _user, _password,
-                     _showPassword, _remember, _verify, _defaultRoute, _connect,
+                     _profileChooser, _manageProfiles, _host, _port, _user, _password,
+                     _showPassword, _remember, _verify, _defaultRoute, _moreOptions,
                  })
         {
             control.Enabled = !busy;
         }
 
+        _connect.Enabled = !busy;
         _disconnect.Enabled = busy;
         _menu.Enabled = !busy;
+        UpdateDetails();
     }
 
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
@@ -744,7 +1074,7 @@ internal sealed class MainForm : Form
         _closing = true;
         _userStopped = true;
         _disconnect.Enabled = false;
-        SetStatus("Disconnecting…");
+        SetState(TunnelState.Disconnecting, "Closing the tunnel…");
         _session?.Stop();
     }
 
@@ -756,20 +1086,99 @@ internal sealed class MainForm : Form
         return session;
     }
 
-    private void SetStatus(string message)
+    // --------------------------------------------------------------- state
+
+    private void SetState(TunnelState state, string hint)
     {
-        _status.Text = message;
-        _statusLabel.Text = message;
+        _state = state;
+        if (state == TunnelState.Connected)
+        {
+            _connectedAt ??= DateTime.UtcNow;
+        }
+        else if (state is not (TunnelState.Connecting or TunnelState.Authenticating or TunnelState.Negotiating))
+        {
+            _connectedAt = null;
+        }
+
+        ApplyStateVisuals(hint);
+        UpdateDetails();
     }
 
-    private static string Describe(TunnelProgress progress) => progress.State switch
+    private void ApplyStateVisuals(string? hint = null)
     {
-        TunnelState.Connected => "Connected: " + progress.Message,
-        TunnelState.Failed => "Failed: " + progress.Message,
-        TunnelState.Disconnecting => "Disconnecting…",
-        TunnelState.Disconnected => "Disconnected",
-        _ => progress.Message,
+        var dark = Theme.IsDark(_theme);
+        var (text, color, defaultHint) = _state switch
+        {
+            TunnelState.Connecting or TunnelState.Authenticating or TunnelState.Negotiating =>
+                ("Connecting…", Color.FromArgb(214, 148, 38),
+                    "Negotiating TLS, authenticating and installing routes."),
+            TunnelState.Connected => ("Connected", Color.FromArgb(52, 168, 83),
+                "All traffic is routed through the tunnel."),
+            TunnelState.Disconnecting => ("Disconnecting…", Color.FromArgb(214, 148, 38),
+                "Closing the tunnel and restoring the routes."),
+            TunnelState.Disconnected => ("Disconnected", Theme.Muted(dark), "The tunnel is closed."),
+            TunnelState.Failed => ("Connection failed", Color.FromArgb(224, 92, 92),
+                "Open the connection log for the exact reason."),
+            _ => ("Not connected", Theme.Muted(dark), "Choose a configuration or enter a server."),
+        };
+
+        _stateLabel.Text = text;
+        _stateLabel.ForeColor = color;
+        _stateHint.Text = string.IsNullOrWhiteSpace(hint) ? defaultHint : hint;
+        _stateHint.ForeColor = Theme.Muted(dark);
+        Text = _state == TunnelState.Connected ? AppTitle + " — Connected" : AppTitle;
+
+        if (_state == TunnelState.Failed)
+        {
+            SetLogVisible(true);
+        }
+    }
+
+    private void UpdateDetails()
+    {
+        var session = _session;
+        var host = _host.Text.Trim();
+        _serverValue.Text = host.Length == 0 ? "—" : host + ":" + (int)_port.Value;
+        _addressValue.Text = ValueOrDash(session?.LocalAddress);
+        _peerValue.Text = ValueOrDash(session?.PeerAddress);
+        _dnsValue.Text = session is { DnsServers.Count: > 0 }
+            ? string.Join(", ", session.DnsServers)
+            : "—";
+
+        if (session is null)
+        {
+            _sentValue.Text = "—";
+            _receivedValue.Text = "—";
+            _durationValue.Text = "—";
+            return;
+        }
+
+        var stats = session.Stats;
+        _sentValue.Text = FormatTraffic(stats.PacketsToTunnel, stats.BytesToTunnel);
+        _receivedValue.Text = FormatTraffic(stats.PacketsToAdapter, stats.BytesToAdapter);
+        _durationValue.Text = _connectedAt is { } started
+            ? FormatDuration(DateTime.UtcNow - started)
+            : "—";
+    }
+
+    private static string ValueOrDash(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "—" : value;
+
+    private static string FormatTraffic(long packets, long bytes) =>
+        $"{packets:N0} packets · {FormatBytes(bytes)}";
+
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        < 1024 => bytes + " B",
+        < 1024 * 1024 => (bytes / 1024d).ToString("0.0") + " KB",
+        < 1024L * 1024 * 1024 => (bytes / (1024d * 1024)).ToString("0.0") + " MB",
+        _ => (bytes / (1024d * 1024 * 1024)).ToString("0.00") + " GB",
     };
+
+    private static string FormatDuration(TimeSpan span) =>
+        span.TotalHours >= 1
+            ? $"{(int)span.TotalHours}:{span.Minutes:00}:{span.Seconds:00}"
+            : $"{span.Minutes:00}:{span.Seconds:00}";
 
     private void Post(Action action)
     {

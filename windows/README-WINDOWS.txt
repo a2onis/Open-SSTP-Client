@@ -13,15 +13,22 @@ Quick start
    may briefly appear before the window opens. Administrator rights are needed
    to create the virtual network adapter.
 
-2. Enter the server, port, username and password, then click Connect. Connection
-   status and errors appear in the window and in the status bar. Click
-   Disconnect or close the window to disconnect and clean up the adapter and
-   routes.
+2. Choose a saved configuration from the list, or enter the server, port,
+   username and password. Click Connect. The window shows the current state at
+   the top right; the Session card shows the tunnel address, DNS servers and
+   live packet counters once traffic starts flowing. Click Disconnect or close
+   the window to disconnect and clean up the adapter and routes.
 
 3. The server and other settings are saved when you connect. The password is
    saved only if you check "Remember password". Saved passwords and saved
    configurations are plaintext in %LOCALAPPDATA%\OpenSstpWin; protect those
    files accordingly.
+
+The window stays quiet: routine actions such as loading a configuration do not
+raise messages. If something needs your attention the state turns red, the
+connection log opens automatically, and the reason is written there. Use
+"Show connection log" at the bottom of the window (or View → Connection Log)
+whenever you want the full detail.
 
 The command-line interface is still available from an administrator terminal:
 
@@ -34,9 +41,9 @@ Configurations
 
 The window has the same profile workflow as the Android app.
 
-* The list at the top of the window shows saved configurations. Choose one and
-  click Load, or open Configuration → Manage Configurations… to see the full
-  list with the endpoint, username and last connection-test result.
+* The list at the top of the window shows saved configurations. Selecting one
+  applies it immediately. Open Configurations → Manage Configurations… for the
+  full list with endpoint, username and last connection-test result.
 * "Add from current settings…" creates a configuration from everything
   currently in the window, including the advanced settings. The name must be
   unique; saving over an existing name asks first.
@@ -138,7 +145,24 @@ Logging
     name.
 
 The menu Settings → Theme offers System default, Light and Dark. The choice is
-saved in settings.json and also applies to the dialogs.
+saved in settings.json and applies to every window. Menus, drop-downs, tab
+headers, check boxes and the connection log are all drawn with explicit
+foreground and background colours, so nothing disappears in either theme.
+
+Routing and traffic
+-------------------
+
+When "Route all internet traffic through the VPN" is enabled (the default) the
+program installs 0.0.0.0/1 and 128.0.0.0/1 routes on the Wintun adapter, plus a
+/32 host route that keeps the encrypted SSTP connection on your physical
+adapter. After installing them it asks Windows which interface would carry
+traffic to the internet. If that is not the tunnel, the connection is reported
+as failed instead of pretending to be connected; the log then contains the
+netsh error that prevented the route from being added.
+
+The Session card proves that data is actually moving: Sent and Received count
+packets between Windows and the tunnel. If both stay at zero while connected,
+open the log and read the route diagnostics there.
 
 
 Command-line options
@@ -215,6 +239,10 @@ What the program changes on your PC
 * Sets the adapter's DNS servers and restores your original configuration when
   the tunnel closes.
 
+* Enables the tunnel interface, gives it the lowest interface metric, and
+  verifies that Windows resolves internet destinations through it before
+  reporting "Connected".
+
 If the program is killed instead of closed, the routes may remain. Running it
 again and disconnecting, or rebooting, clears them.
 
@@ -250,6 +278,13 @@ Troubleshooting
 "Authentication failed"
     Verify the username and password. Servers usually offer MS-CHAPv2; PAP is
     also tried by default. Try --auth MSCHAPv2 if your server is picky.
+
+"Connected but pages do not load"
+    Open the connection log. It lists every route and the netsh error for any
+    route that failed. Confirm the app is running as administrator, and that
+    "Route all internet traffic through the VPN" is enabled. If the Sent counter
+    stays at zero, Windows is not sending packets to the adapter and the route
+    verification in the log tells you which interface won instead.
 
 TLS handshake failed
     The server certificate is not trusted. Install the server's CA in

@@ -26,12 +26,13 @@ internal static class Ui
         Width = 120,
     };
 
-    public static CheckBox Check(string text, bool value) => new()
+    public static CheckBox Check(string text, bool value) => new ThemedCheckBox
     {
         Text = text,
         Checked = value,
         AutoSize = true,
-        Margin = new Padding(3, 6, 3, 3),
+        MinimumSize = new Size(0, 24),
+        Margin = new Padding(3, 5, 3, 5),
     };
 
     public static Button Button(string text, EventHandler handler)

@@ -10,7 +10,15 @@ if (args.Length == 0)
     return 0;
 }
 
-return await App.RunAsync(args).ConfigureAwait(false);
+try
+{
+    return await App.RunAsync(args).ConfigureAwait(false);
+}
+catch (Exception exception)
+{
+    Console.Error.WriteLine("Error: " + exception.Message);
+    return 1;
+}
 
 namespace OpenSstpWin
 {

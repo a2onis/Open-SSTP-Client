@@ -682,18 +682,23 @@ public sealed class SstpTunnel : IAsyncDisposable
     }
 
     /// <summary>Waits for the next inbound IPv4 packet.</summary>
-    public async Task<byte[]?> ReadIpPacketAsync(CancellationToken token)
+    public Task<byte[]?> ReadIpPacketAsync(CancellationToken token) => ReadPacketAsync(_ipv4.Reader, token);
+
+    /// <summary>Waits for the next inbound IPv6 packet.</summary>
+    public Task<byte[]?> ReadIpv6PacketAsync(CancellationToken token) => ReadPacketAsync(_ipv6.Reader, token);
+
+    private static async Task<byte[]?> ReadPacketAsync(ChannelReader<byte[]> reader, CancellationToken token)
     {
         try
         {
-            if (_ipv4.Reader.TryRead(out var packet))
+            if (reader.TryRead(out var packet))
             {
                 return packet;
             }
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
             timeout.CancelAfter(TimeSpan.FromMilliseconds(100));
-            return await _ipv4.Reader.ReadAsync(timeout.Token).ConfigureAwait(false);
+            return await reader.ReadAsync(timeout.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
