@@ -350,6 +350,23 @@ internal static class Theme
             using var brush = new SolidBrush(e.ToolStrip.BackColor);
             e.Graphics.FillRectangle(brush, e.AffectedBounds);
         }
+
+        protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+        {
+            var bounds = e.ImageRectangle;
+            if (bounds.Width < 10 || bounds.Height < 10)
+            {
+                bounds = new Rectangle(4, 4, 13, 13);
+            }
+
+            using var pen = new Pen(Accent, 2f);
+            e.Graphics.DrawLines(pen, new[]
+            {
+                new Point(bounds.Left + 2, bounds.Top + bounds.Height / 2),
+                new Point(bounds.Left + bounds.Width / 2, bounds.Bottom - 3),
+                new Point(bounds.Right - 2, bounds.Top + 3),
+            });
+        }
     }
 
     private sealed class ThemedColorTable : ProfessionalColorTable
