@@ -27,8 +27,16 @@ jobs:
 
       - name: Build (warnings are errors)
         working-directory: windows
+        shell: pwsh
         run: |
-          dotnet build src/OpenSstpWin/OpenSstpWin.csproj -c Release -warnaserror
+          dotnet build src/OpenSstpWin/OpenSstpWin.csproj -c Release -warnaserror 2>&1 | Tee-Object -FilePath build-output.txt
+          $exitCode = $LASTEXITCODE
+          if ($exitCode -ne 0) {
+            Get-Content build-output.txt | Where-Object { $_ -match 'error|warning' } | Select-Object -Unique | ForEach-Object {
+              Write-Host "::error::$($_ -replace '%', '%25')"
+            }
+            exit $exitCode
+          }
 
       - name: Unit tests (protocol and crypto)
         working-directory: windows
