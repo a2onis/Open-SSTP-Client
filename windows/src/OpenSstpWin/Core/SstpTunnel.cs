@@ -463,7 +463,9 @@ public sealed class SstpTunnel : IAsyncDisposable
 
         try
         {
+#pragma warning disable CA1416 // Windows Schannel rejects the policy; the exception is handled below.
             options.CipherSuitesPolicy = new CipherSuitesPolicy(suites);
+#pragma warning restore CA1416
         }
         catch (PlatformNotSupportedException)
         {

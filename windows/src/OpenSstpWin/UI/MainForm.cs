@@ -11,7 +11,7 @@ namespace OpenSstpWin.UI;
 internal sealed class MainForm : Form
 {
     private const string CurrentSettingsItem = "(current settings)";
-    private const string ProductName = "Open SSTP Client";
+    private const string AppTitle = "Open SSTP Client";
 
     private Settings _settings;
     private ProfileStore _profiles;
@@ -79,7 +79,7 @@ internal sealed class MainForm : Form
         _theme = settings.AppTheme;
         _profiles = ProfileStore.CreateDefault();
 
-        Text = ProductName;
+        Text = AppTitle;
         MinimumSize = new Size(640, 580);
         ClientSize = new Size(760, 680);
         StartPosition = FormStartPosition.CenterScreen;
@@ -546,12 +546,12 @@ internal sealed class MainForm : Form
     {
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.11.0";
         MessageBox.Show(this,
-            ProductName + " for Windows " + version + " (portable, x64)\n\n" +
+            AppTitle + " for Windows " + version + " (portable, x64)\n\n" +
             "A Windows port of Open-SSTP-Client by kittoku, using the Wintun layer-3 adapter.\n\n" +
             "Settings: " + Settings.FilePath + "\n" +
             "Profiles: " + Settings.ProfilesPath + "\n" +
             "Logs: " + _settings.LogDirectory,
-            "About " + ProductName,
+            "About " + AppTitle,
             MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
