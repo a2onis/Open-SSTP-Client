@@ -438,6 +438,12 @@ internal sealed class ThemedCheckBox : CheckBox
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
     }
 
+    public override Size GetPreferredSize(Size proposedSize)
+    {
+        var size = base.GetPreferredSize(proposedSize);
+        return new Size(size.Width + 6, Math.Max(24, size.Height));
+    }
+
     protected override void OnPaint(PaintEventArgs pevent)
     {
         var graphics = pevent.Graphics;
@@ -514,6 +520,12 @@ internal sealed class ThemedRadioButton : RadioButton
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+    }
+
+    public override Size GetPreferredSize(Size proposedSize)
+    {
+        var size = base.GetPreferredSize(proposedSize);
+        return new Size(size.Width + 6, Math.Max(24, size.Height));
     }
 
     protected override void OnPaint(PaintEventArgs pevent)
