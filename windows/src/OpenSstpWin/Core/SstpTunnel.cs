@@ -67,6 +67,7 @@ public sealed class SstpTunnel : IAsyncDisposable
     private SstpPacketizer? _packetizer;
     private Task? _reader;
     private readonly byte[] _readBuffer = new byte[65536];
+    private int _disconnectRequested;
 
     private byte _frameId;
     private int _mru;
@@ -181,11 +182,12 @@ public sealed class SstpTunnel : IAsyncDisposable
             SetState(TunnelState.Connected, "Connected");
             Result.Message = "Connected";
 
-            // Return control to the session while the reader loop keeps running;
-            // _disconnected completes on user disconnect, server disconnect or error.
-            await WaitForEndAsync(token).ConfigureAwait(false);
-            Result.Message = "Disconnected";
-            State = TunnelState.Disconnected;
+            // Hand control straight back to the session. It must now start the
+            // packet pumps and apply the address, MTU, DNS servers and routes;
+            // waiting here would leave the window showing "Connected" with an
+            // adapter that carries no traffic and no system-wide configuration.
+            // The reader loop keeps running and Disconnected completes on user
+            // disconnect, server disconnect or error.
             return Result;
         }
         catch (OperationCanceledException)
@@ -223,45 +225,37 @@ public sealed class SstpTunnel : IAsyncDisposable
         _report(new TunnelProgress(state, message));
     }
 
-    private async Task WaitForEndAsync(CancellationToken token)
-    {
-        try
-        {
-            await Task.Delay(Timeout.Infinite, token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // Normal disconnect.
-        }
-    }
-
-    /// <summary>Completes when the tunnel stops for any reason.</summary>
+    /// <summary>
+    /// Completes when the tunnel stops for any reason: the user disconnected, the
+    /// server sent CALL_DISCONNECT/CALL_ABORT, or the reader loop hit an error.
+    /// <see cref="ConnectAsync"/> returns as soon as the tunnel is up, so the
+    /// owning session awaits this to learn that the data plane is gone.
+    /// </summary>
     public Task Disconnected => _disconnected.Task;
 
     public void Disconnect()
     {
+        if (Interlocked.Exchange(ref _disconnectRequested, 1) != 0)
+        {
+            return;
+        }
+
+        if (State == TunnelState.Connected)
+        {
+            try
+            {
+                // Raised before Disconnected completes, so the socket is still
+                // open when the server reads CALL_DISCONNECT and the session does
+                // not tear the tunnel down underneath this write.
+                SendRawAsync(SstpBuilder.CallDisconnect(), CancellationToken.None).Wait(TimeSpan.FromSeconds(2));
+            }
+            catch
+            {
+                // The socket may already be gone; cancelling is enough.
+            }
+        }
+
         _disconnected.TrySetResult();
-        if (State is TunnelState.Connecting or TunnelState.Authenticating or TunnelState.Negotiating)
-        {
-            _cts.Cancel();
-            return;
-        }
-
-        if (State != TunnelState.Connected)
-        {
-            _cts.Cancel();
-            return;
-        }
-
-        try
-        {
-            SendRawAsync(SstpBuilder.CallDisconnect(), CancellationToken.None).Wait(TimeSpan.FromSeconds(2));
-        }
-        catch
-        {
-            // The socket may already be gone; cancelling is enough.
-        }
-
         _cts.Cancel();
     }
 
@@ -1502,6 +1496,10 @@ public sealed class SstpTunnel : IAsyncDisposable
     {
         try
         {
+            // Closing the tunnel is a disconnect even if Disconnect() never ran,
+            // so nobody can be left waiting on the signal.
+            _disconnected.TrySetResult();
+
             _control.Writer.TryComplete();
             _ppp.Writer.TryComplete();
             _ipv4.Writer.TryComplete();

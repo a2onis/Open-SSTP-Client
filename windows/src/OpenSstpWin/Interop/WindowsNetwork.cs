@@ -41,18 +41,120 @@ public static class WindowsNetwork
 
     public static async Task<bool> WaitForAdapterAsync(string adapterName, TimeSpan timeout)
     {
+        return await WaitForInterfaceIndexAsync(adapterName, timeout).ConfigureAwait(false) != 0;
+    }
+
+    /// <summary>
+    /// Waits until the adapter has an IPv4 interface index, which Windows assigns
+    /// a moment after the driver registers the device. Returns 0 on timeout.
+    /// </summary>
+    public static async Task<uint> WaitForInterfaceIndexAsync(string adapterName, TimeSpan timeout)
+    {
         var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
+        while (true)
         {
-            if (GetInterfaceIndex(adapterName) != 0)
+            var index = GetInterfaceIndex(adapterName);
+            if (index != 0)
             {
-                return true;
+                return index;
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                return 0;
             }
 
             await Task.Delay(150).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Waits until the adapter reports the address that netsh was asked to
+    /// assign. Routes added before that point are often rejected.
+    /// </summary>
+    public static async Task<bool> WaitForInterfaceAddressAsync(string adapterName, string address, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (true)
+        {
+            if (HasInterfaceAddress(adapterName, address))
+            {
+                return true;
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                return false;
+            }
+
+            await Task.Delay(150).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Waits until Windows would carry traffic to <paramref name="destination"/>
+    /// over the expected interface. The routing table is updated asynchronously,
+    /// so an immediate check can report a stale winner.
+    /// </summary>
+    public static async Task<bool> WaitForBestInterfaceAsync(
+        string destination,
+        uint expectedInterfaceIndex,
+        TimeSpan timeout)
+    {
+        if (expectedInterfaceIndex == 0)
+        {
+            return false;
+        }
+
+        var deadline = DateTime.UtcNow + timeout;
+        while (true)
+        {
+            if (GetBestInterfaceIndex(destination) == expectedInterfaceIndex)
+            {
+                return true;
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                return false;
+            }
+
+            await Task.Delay(200).ConfigureAwait(false);
+        }
+    }
+
+    private static bool HasInterfaceAddress(string adapterName, string address)
+    {
+        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (!IsAdapter(nic, adapterName))
+            {
+                continue;
+            }
+
+            try
+            {
+                foreach (var unicast in nic.GetIPProperties().UnicastAddresses)
+                {
+                    if (string.Equals(unicast.Address.ToString(), address, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+                // The adapter is not ready to report its addresses yet.
+            }
+        }
 
         return false;
+    }
+
+    private static bool IsAdapter(NetworkInterface nic, string adapterName)
+    {
+        return nic.Name.Equals(adapterName, StringComparison.OrdinalIgnoreCase) ||
+               nic.Description.Contains(adapterName, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Finds the IPv4 interface index of an adapter by its friendly name.</summary>
@@ -60,8 +162,7 @@ public static class WindowsNetwork
     {
         foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
         {
-            if (!nic.Name.Equals(adapterName, StringComparison.OrdinalIgnoreCase) &&
-                !nic.Description.Contains(adapterName, StringComparison.OrdinalIgnoreCase))
+            if (!IsAdapter(nic, adapterName))
             {
                 continue;
             }

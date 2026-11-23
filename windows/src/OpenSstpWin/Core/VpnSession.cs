@@ -36,7 +36,9 @@ public sealed class VpnSession : IAsyncDisposable
     private Task? _receiveTask;
     private Task? _receiveV6Task;
     private Task? _watchdogTask;
+    private Task? _disconnectTask;
     private TunnelResult _result = new();
+    private volatile bool _stopRequested;
 
     private long _packetsToTunnel;
     private long _packetsToAdapter;
@@ -125,8 +127,26 @@ public sealed class VpnSession : IAsyncDisposable
                 $"Connected to {_settings.Host} — local {_result.LocalAddress}, peer {_result.PeerAddress}" +
                 (_result.DnsServers.Count > 0 ? ", DNS " + string.Join(", ", _result.DnsServers) : string.Empty));
 
-            await WaitUntilStoppedAsync(linked.Token).ConfigureAwait(false);
-            _result.Message = "Disconnected";
+            // The tunnel reports its own failures through the progress callback,
+            // so all that is left is to wait for the user to stop us or for the
+            // data plane to disappear underneath us (server CALL_DISCONNECT,
+            // CALL_ABORT or a socket error). Without this the window would keep
+            // claiming "Connected" over a dead tunnel and never reconnect.
+            var tunnelEnded = await WaitForStopAsync(_tunnel.Disconnected, token).ConfigureAwait(false);
+
+            if (tunnelEnded && !_stopRequested && !token.IsCancellationRequested)
+            {
+                _result.Message = DescribeUnexpectedEnd();
+                if (State is not TunnelState.Failed)
+                {
+                    Report(TunnelState.Disconnected, _result.Message);
+                }
+            }
+            else
+            {
+                _result.Message = "Disconnected";
+            }
+
             return _result;
         }
         catch (OperationCanceledException)
@@ -144,16 +164,45 @@ public sealed class VpnSession : IAsyncDisposable
         }
     }
 
-    private async Task WaitUntilStoppedAsync(CancellationToken token)
+    /// <summary>
+    /// Waits until the user stops the session or the tunnel ends on its own,
+    /// returning true when the tunnel ended first. It never throws: a cancelled
+    /// wait is a normal disconnect.
+    /// </summary>
+    internal static async Task<bool> WaitForStopAsync(Task tunnelEnd, CancellationToken token)
     {
+        if (tunnelEnd.IsCompleted)
+        {
+            return true;
+        }
+
+        var stopSignal = Task.Delay(Timeout.Infinite, token);
+        if (await Task.WhenAny(tunnelEnd, stopSignal).ConfigureAwait(false) == tunnelEnd)
+        {
+            return true;
+        }
+
         try
         {
-            await Task.Delay(Timeout.Infinite, token).ConfigureAwait(false);
+            // Observe the cancelled delay so the runtime does not report an
+            // unobserved task exception.
+            await stopSignal.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            // Normal disconnect.
+            // The user asked to stop.
         }
+
+        return false;
+    }
+
+    /// <summary>Why the tunnel stopped when nobody asked it to.</summary>
+    private string DescribeUnexpectedEnd()
+    {
+        var message = _tunnel?.Result.Message;
+        return string.IsNullOrWhiteSpace(message) || message == "Connected"
+            ? "The server closed the connection."
+            : message;
     }
 
     private TunnelResult Fail(string message)
@@ -186,11 +235,19 @@ public sealed class VpnSession : IAsyncDisposable
 
     private async Task ApplyNetworkConfigurationAsync(TunnelResult result, ServerRoute? serverRoute)
     {
-        var interfaceIndex = WindowsNetwork.GetInterfaceIndex(_settings.AdapterName);
+        // Without an interface index nothing can be applied. Returning quietly
+        // here used to leave the window claiming "Connected" with an adapter that
+        // had no address, no DNS servers and no routes, so this is a hard failure.
+        var interfaceIndex = await WindowsNetwork
+            .WaitForInterfaceIndexAsync(_settings.AdapterName, TimeSpan.FromSeconds(15))
+            .ConfigureAwait(false);
+
         if (interfaceIndex == 0)
         {
-            _log("Warning: the tunnel adapter index is unknown; routes were not installed.");
-            return;
+            throw new InvalidOperationException(
+                $"The tunnel adapter \"{_settings.AdapterName}\" was created, but Windows never gave it an IPv4 " +
+                "interface index, so the address, DNS servers and routes could not be applied. " +
+                "Start the app as administrator and check that the Wintun driver installed correctly.");
         }
 
         WindowsNetwork.EnableInterface(_settings.AdapterName);
@@ -205,6 +262,15 @@ public sealed class VpnSession : IAsyncDisposable
             {
                 _log("Warning: could not assign the address to the adapter with netsh: " +
                      WindowsNetwork.LastError);
+            }
+            else if (!await WindowsNetwork.WaitForInterfaceAddressAsync(
+                         _settings.AdapterName, result.LocalAddress, TimeSpan.FromSeconds(10)).ConfigureAwait(false))
+            {
+                // netsh returns before the IP Helper has finished, and the routes
+                // below are far more likely to be rejected while the adapter has
+                // no address of its own.
+                _log("Warning: Windows has not applied " + result.LocalAddress +
+                     " to the adapter yet; the routes below may fail.");
             }
         }
         else
@@ -272,9 +338,12 @@ public sealed class VpnSession : IAsyncDisposable
             AddRoute(interfaceIndex, "0.0.0.0/1", "0.0.0.0", "tunnel");
             AddRoute(interfaceIndex, "128.0.0.0/1", "0.0.0.0", "tunnel");
 
-            var best = WindowsNetwork.GetBestInterfaceIndex("1.1.1.1");
-            if (best != interfaceIndex)
+            // Windows updates the routing table asynchronously, so give it a
+            // moment before concluding that another interface won.
+            if (!await WindowsNetwork.WaitForBestInterfaceAsync("1.1.1.1", interfaceIndex, TimeSpan.FromSeconds(5))
+                    .ConfigureAwait(false))
             {
+                var best = WindowsNetwork.GetBestInterfaceIndex("1.1.1.1");
                 throw new InvalidOperationException(
                     "The VPN connected, but Windows is still sending internet traffic outside the tunnel. " +
                     "The route table could not be updated (expected interface " + interfaceIndex +
@@ -284,8 +353,11 @@ public sealed class VpnSession : IAsyncDisposable
 
             _log("Windows now routes internet traffic through the tunnel (interface " + interfaceIndex + ").");
         }
-
-        await Task.CompletedTask.ConfigureAwait(false);
+        else
+        {
+            _log("\"Route all internet traffic through the VPN\" is off: only the prefixes listed above " +
+                 "are sent through the tunnel, everything else keeps using your normal connection.");
+        }
     }
 
     private void AddRoute(uint interfaceIndex, string prefix, string nextHop, string what)
@@ -396,7 +468,16 @@ public sealed class VpnSession : IAsyncDisposable
         }
 
         Report(TunnelState.Disconnecting, "Disconnecting…");
-        _tunnel?.Disconnect();
+        _stopRequested = true;
+
+        // CALL_DISCONNECT is written from the thread pool because the caller is
+        // usually the UI thread and must not block on the socket. Teardown waits
+        // for this task, so the tunnel is not closed under the write.
+        if (_tunnel is { } tunnel)
+        {
+            _disconnectTask = Task.Run(tunnel.Disconnect);
+        }
+
         _stop.Cancel();
     }
 
@@ -404,6 +485,10 @@ public sealed class VpnSession : IAsyncDisposable
     {
         try
         {
+            // Stop the pumps first: they must not be writing to the tunnel while
+            // the routes and the adapter go away.
+            _stop.Cancel();
+
             WindowsNetwork.RestoreDns();
 
             foreach (var route in _installedRoutes)
@@ -412,6 +497,12 @@ public sealed class VpnSession : IAsyncDisposable
             }
 
             _installedRoutes.Clear();
+
+            if (_disconnectTask is { } disconnectTask)
+            {
+                _disconnectTask = null;
+                await Task.WhenAny(disconnectTask, Task.Delay(3000)).ConfigureAwait(false);
+            }
 
             if (_tunnel is not null)
             {
