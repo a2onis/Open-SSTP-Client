@@ -1,8 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="teal_700">#FF00796B</color>
+    <!-- Brand palette: deep teal tunnel + warm amber accent. -->
+    <color name="md_primary">#00695C</color>
+    <color name="md_on_primary">#FFFFFF</color>
+    <color name="md_primary_container">#B6EFE4</color>
+    <color name="md_on_primary_container">#00201B</color>
+
+    <color name="md_secondary">#4A635F</color>
+    <color name="md_on_secondary">#FFFFFF</color>
+    <color name="md_secondary_container">#CCE8E3</color>
+    <color name="md_on_secondary_container">#06201C</color>
+
+    <color name="md_tertiary">#8A6A00</color>
+    <color name="md_on_tertiary">#FFFFFF</color>
+    <color name="md_tertiary_container">#FFE08A</color>
+    <color name="md_on_tertiary_container">#2A1D00</color>
+
+    <color name="md_error">#BA1A1A</color>
+    <color name="md_on_error">#FFFFFF</color>
+    <color name="md_error_container">#FFDAD6</color>
+    <color name="md_on_error_container">#410002</color>
+
+    <color name="md_background">#F5FAF8</color>
+    <color name="md_surface">#F5FAF8</color>
+    <color name="md_surface_variant">#DAE5E2</color>
+    <color name="md_surface_container">#EAF2F0</color>
+    <color name="md_surface_container_high">#E2ECE9</color>
+    <color name="md_on_surface">#171D1C</color>
+    <color name="md_on_surface_variant">#3F4947</color>
+    <color name="md_outline">#6F7977</color>
+    <color name="md_outline_variant">#BEC9C6</color>
+
+    <color name="md_success">#1B7F3B</color>
+    <color name="md_warning">#8A6A00</color>
+
+    <!-- Hero connection card (dark teal gradient in both themes). -->
+    <color name="hero_start">#00695C</color>
+    <color name="hero_end">#0E9C8B</color>
+    <color name="hero_text">#FFFFFF</color>
+    <color name="hero_text_muted">#CCE6FFFA</color>
+    <color name="hero_button_text">#00443B</color>
+    <color name="hero_outline">#66FFFFFF</color>
+
+    <!-- Legacy aliases kept for any resource still referencing them. -->
+    <color name="teal_700">#00695C</color>
     <color name="teal_A700">#00BFA5</color>
-    <color name="deep_orange_700">#FFE64A19</color>
+    <color name="deep_orange_700">#B26A00</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <color name="status_connected">@color/md_success</color>
+    <color name="status_retrying">@color/md_warning</color>
+    <color name="status_connecting">#FFD166</color>
+    <color name="status_failed">@color/md_error</color>
+    <color name="status_idle">@color/hero_text_muted</color>
 </resources>

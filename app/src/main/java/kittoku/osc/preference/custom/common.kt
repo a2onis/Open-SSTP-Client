@@ -34,10 +34,15 @@ internal abstract class OscEditTextPreference(context: Context, attrs: Attribute
     protected open val provider: SummaryProvider<out Preference> = SimpleSummaryProvider.getInstance()
 
     override fun updateView() {
-        text = when (oscPrefKey) {
+        val value = when (oscPrefKey) {
             in DEFAULT_INT_MAP.keys -> getIntPrefValue(oscPrefKey, sharedPreferences!!).toString()
             in DEFAULT_STRING_MAP -> getStringPrefValue(oscPrefKey, sharedPreferences!!)
             else -> throw NotImplementedError(oscPrefKey.name)
+        }
+
+        // Writing an unchanged value would re-notify preference listeners.
+        if (text != value) {
+            text = value
         }
     }
 

@@ -18,7 +18,11 @@ internal abstract class ModifiedMultiSelectListPreference(context: Context, attr
     protected open val provider: SummaryProvider<Preference>? = null
 
     override fun updateView() {
-        values = getSetPrefValue(oscPrefKey, sharedPreferences!!)
+        val stored = getSetPrefValue(oscPrefKey, sharedPreferences!!)
+
+        if (values != stored) {
+            values = stored
+        }
     }
 
     override fun onAttached() {

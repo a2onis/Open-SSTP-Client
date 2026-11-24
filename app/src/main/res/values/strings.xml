@@ -1,3 +1,53 @@
 <resources>
     <string name="app_name">Open SSTP Client</string>
+
+    <!-- Tabs -->
+    <string name="tab_home">Home</string>
+    <string name="tab_settings">Settings</string>
+
+    <!-- Connection card -->
+    <string name="status_disconnected">Disconnected</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_retrying">Reconnecting…</string>
+    <string name="status_failed">Connection failed</string>
+    <string name="smart_badge">AUTO</string>
+    <string name="smart_badge_off">MANUAL</string>
+    <string name="hero_hint_idle">Tap connect to bring the tunnel up</string>
+    <string name="hero_hint_no_host">Add a hostname below to get started</string>
+    <string name="label_no_configuration">No configuration selected</string>
+    <string name="action_connect">Connect</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_best_server">Best server</string>
+    <string name="action_manage">Manage</string>
+
+    <!-- Smart connect -->
+    <string name="smart_title">Smart connect</string>
+    <string name="smart_connect_enabled">Auto-optimize connections</string>
+    <string name="smart_connect_enabled_summary">Tunes the tunnel to the current network and retries failures automatically</string>
+    <string name="smart_auto_mtu">Match MTU to the network</string>
+    <string name="smart_auto_mtu_summary">Sizes the tunnel from the real path MTU to avoid fragmentation</string>
+    <string name="smart_auto_fallback">Automatic fallback</string>
+    <string name="smart_auto_fallback_summary">Retries with alternate authentication, TLS and MTU before giving up</string>
+    <string name="smart_auto_endpoint">Switch to a better configuration</string>
+    <string name="smart_auto_endpoint_summary">Falls back to the next best saved configuration</string>
+    <string name="smart_fast_reconnect">Fast reconnect</string>
+    <string name="smart_fast_reconnect_summary">Exponential backoff (2 s to 30 s) instead of a fixed interval</string>
+    <string name="smart_tuning_status">Current tuning</string>
+    <string name="smart_reset">Forget learned settings</string>
+    <string name="smart_reset_summary">Clears endpoint statistics and the remembered strategy</string>
+    <string name="smart_overview">Smart connect</string>
+
+    <!-- Menu and dialogs -->
+    <string name="menu_quality">Connection quality</string>
+    <string name="menu_theme">Theme</string>
+    <string name="dialog_quality_title">Connection quality</string>
+    <string name="action_reset">Reset</string>
+    <string name="action_close">Close</string>
+    <string name="toast_nothing_learned">Nothing has been learned yet</string>
+    <string name="toast_stats_reset">Learned settings cleared</string>
+    <string name="toast_no_saved_config">Save a configuration first</string>
+    <string name="toast_using_best">Using %1$s</string>
+    <string name="toast_disconnect_first">Disconnect the VPN first</string>
 </resources>

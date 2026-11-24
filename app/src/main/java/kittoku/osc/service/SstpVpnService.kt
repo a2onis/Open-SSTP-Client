@@ -19,8 +19,11 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.preference.PreferenceManager
 import kittoku.osc.R
 import kittoku.osc.SharedBridge
+import kittoku.osc.activity.MainActivity
 import kittoku.osc.control.Controller
 import kittoku.osc.control.LogWriter
+import kittoku.osc.control.SmartConnect
+import kittoku.osc.control.SmartState
 import kittoku.osc.preference.OscPrefKey
 import kittoku.osc.preference.accessor.getBooleanPrefValue
 import kittoku.osc.preference.accessor.getIntPrefValue
@@ -80,20 +83,21 @@ internal class SstpVpnService : VpnService() {
         }
     }
 
+    private val connectorListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == OscPrefKey.ROOT_STATE.name) {
+            val newState = getBooleanPrefValue(OscPrefKey.ROOT_STATE, prefs)
+
+            setBooleanPrefValue(newState, OscPrefKey.HOME_CONNECTOR, prefs)
+            requestTileListening()
+            refreshForeground()
+        }
+    }
+
     override fun onCreate() {
         notificationManager = NotificationManagerCompat.from(this)
 
         prefs = PreferenceManager.getDefaultSharedPreferences(this)
-
-        listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == OscPrefKey.ROOT_STATE.name) {
-                val newState = getBooleanPrefValue(OscPrefKey.ROOT_STATE, prefs)
-
-                setBooleanPrefValue(newState, OscPrefKey.HOME_CONNECTOR, prefs)
-                requestTileListening()
-            }
-        }
-
+        listener = connectorListener
         prefs.registerOnSharedPreferenceChangeListener(listener)
 
         scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -102,10 +106,19 @@ internal class SstpVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return when (intent?.action) {
             ACTION_VPN_CONNECT -> {
+                // A retry loop from the previous session must stop before the new one
+                // replaces its settings.
+                runBlocking { jobReconnect?.cancelAndJoin() }
                 controller?.kill(false, null)
 
                 beForegrounded()
+
                 resetReconnectionLife(prefs)
+
+                // Detect the path MTU, replay the strategy that worked last time and
+                // reset the retry ladder before the PPP stack reads the settings.
+                SmartConnect.reserveForConnect(this, prefs)
+
                 if (getBooleanPrefValue(OscPrefKey.LOG_DO_SAVE_LOG, prefs)) {
                     prepareLogWriter()
                 }
@@ -137,6 +150,8 @@ internal class SstpVpnService : VpnService() {
         controller = Controller(SharedBridge(this)).also {
             it.launchJobMain()
         }
+
+        refreshForeground()
     }
 
     private fun prepareLogWriter() {
@@ -172,17 +187,47 @@ internal class SstpVpnService : VpnService() {
 
     internal fun launchJobReconnect() {
         jobReconnect = scope.launch {
-            try {
-                getIntPrefValue(OscPrefKey.RECONNECTION_LIFE, prefs).also {
-                    val life = it - 1
-                    setIntPrefValue(life, OscPrefKey.RECONNECTION_LIFE, prefs)
+            // A newer connect request starts a new session; an older retry loop must
+            // not touch its settings or start a second controller.
+            val token = SmartConnect.sessionToken(prefs)
 
-                    val message = "Reconnection will be tried (LIFE = $life)"
+            try {
+                if (SmartConnect.isFallbackEnabled(prefs)) {
+                    val plan = SmartConnect.nextPlan(this@SstpVpnService, prefs)
+
+                    if (plan == null) {
+                        logWriter?.report("Smart connect exhausted every attempt")
+                        notifyError("CONNECTION FAILED")
+                        close()
+                        return@launch
+                    }
+
+                    val message = "Attempt ${plan.attempt}/${plan.totalAttempts}: ${plan.detail} (in ${plan.delayMs / 1000}s)"
                     notifyMessage(message, NOTIFICATION_RECONNECT_ID, NOTIFICATION_RECONNECT_CHANNEL)
                     logWriter?.report(message)
+                    refreshForeground()
+
+                    delay(plan.delayMs)
+
+                    if (SmartConnect.sessionToken(prefs) != token) {
+                        return@launch
+                    }
+
+                    initializeClient()
+                    return@launch
                 }
 
+                val life = getIntPrefValue(OscPrefKey.RECONNECTION_LIFE, prefs) - 1
+                setIntPrefValue(life, OscPrefKey.RECONNECTION_LIFE, prefs)
+                val message = "Reconnection will be tried (LIFE = $life)"
+                notifyMessage(message, NOTIFICATION_RECONNECT_ID, NOTIFICATION_RECONNECT_CHANNEL)
+                logWriter?.report(message)
+
                 delay(getIntPrefValue(OscPrefKey.RECONNECTION_INTERVAL, prefs) * 1000L)
+
+                if (SmartConnect.sessionToken(prefs) != token) {
+                    return@launch
+                }
 
                 initializeClient()
             } catch (_: CancellationException) { }
@@ -192,41 +237,101 @@ internal class SstpVpnService : VpnService() {
         }
     }
 
-    private fun beForegrounded() {
+    private fun createChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            arrayOf(
-                NOTIFICATION_ERROR_CHANNEL,
-                NOTIFICATION_RECONNECT_CHANNEL,
+            val tunnel = NotificationChannel(
                 NOTIFICATION_DISCONNECT_CHANNEL,
-                NOTIFICATION_CERTIFICATE_CHANNEL,
-            ).map {
-                NotificationChannel(it, it, NotificationManager.IMPORTANCE_DEFAULT)
-            }.also {
+                "VPN connection",
+                NotificationManager.IMPORTANCE_LOW
+            ).also {
+                it.description = "Shows the tunnel state and offers disconnect"
+                it.setShowBadge(false)
+            }
+
+            arrayOf(
+                NotificationChannel(NOTIFICATION_ERROR_CHANNEL, "Errors", NotificationManager.IMPORTANCE_DEFAULT),
+                NotificationChannel(NOTIFICATION_RECONNECT_CHANNEL, "Reconnection", NotificationManager.IMPORTANCE_LOW),
+                tunnel,
+                NotificationChannel(NOTIFICATION_CERTIFICATE_CHANNEL, "Certificates", NotificationManager.IMPORTANCE_DEFAULT),
+            ).also {
                 notificationManager.createNotificationChannels(it)
             }
         }
+    }
 
-        val pendingIntent = PendingIntent.getService(
+    private fun contentText(): String {
+        val endpoint = SmartConnect.endpoint(prefs)
+
+        return when (SmartConnect.state(prefs)) {
+            SmartState.CONNECTED -> {
+                val mtu = SmartConnect.activeMtu(prefs)
+                "Connected · $endpoint · MTU $mtu"
+            }
+
+            SmartState.CONNECTING -> "Connecting · $endpoint"
+            SmartState.RETRYING -> SmartConnect.detail(prefs).ifBlank { "Reconnecting · $endpoint" }
+            SmartState.FAILED -> SmartConnect.detail(prefs).ifBlank { "Connection failed" }
+            SmartState.IDLE -> "Disconnected"
+        }
+    }
+
+    private fun buildNotification(): Notification {
+        val disconnectIntent = PendingIntent.getService(
             this,
             0,
             Intent(this, SstpVpnService::class.java).setAction(ACTION_VPN_DISCONNECT),
             PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val builder = NotificationCompat.Builder(this, NOTIFICATION_DISCONNECT_CHANNEL).also {
-            it.priority = NotificationCompat.PRIORITY_DEFAULT
+        val openAppIntent = PendingIntent.getActivity(
+            this,
+            1,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return NotificationCompat.Builder(this, NOTIFICATION_DISCONNECT_CHANNEL).also {
+            it.priority = NotificationCompat.PRIORITY_LOW
             it.setOngoing(true)
             it.setAutoCancel(true)
+            it.setOnlyAlertOnce(true)
+            it.setShowWhen(false)
             it.setSmallIcon(R.drawable.ic_baseline_vpn_lock_24)
-            it.addAction(R.drawable.ic_baseline_close_24, "DISCONNECT", pendingIntent)
-        }
+            it.setContentTitle(getString(R.string.app_name))
+            it.setContentText(contentText())
+            it.setContentIntent(openAppIntent)
+            it.setCategory(NotificationCompat.CATEGORY_SERVICE)
+            it.addAction(R.drawable.ic_baseline_close_24, "DISCONNECT", disconnectIntent)
+        }.build()
+    }
 
-        startForeground(NOTIFICATION_DISCONNECT_ID, builder.build())
+    private fun beForegrounded() {
+        createChannels()
+        startForeground(NOTIFICATION_DISCONNECT_ID, buildNotification())
+    }
+
+    /** Re-renders the ongoing notification after the tunnel state changed. */
+    internal fun refreshForeground() {
+        if (!::prefs.isInitialized) return
+
+        try {
+            startForeground(NOTIFICATION_DISCONNECT_ID, buildNotification())
+        } catch (_: Exception) {
+            // The service may not be in the foreground yet; the next refresh fixes it.
+        }
+    }
+
+    internal fun onConnected() {
+        refreshForeground()
+
+        val endpoint = SmartConnect.endpoint(prefs)
+        logWriter?.report("Connected to $endpoint (MTU ${SmartConnect.activeMtu(prefs)})")
     }
 
     internal fun notifyMessage(message: String, id: Int, channel: String) {
         NotificationCompat.Builder(this, channel).also {
             it.setSmallIcon(R.drawable.ic_baseline_vpn_lock_24)
+            it.setContentTitle(getString(R.string.app_name))
             it.setContentText(message)
             it.priority = NotificationCompat.PRIORITY_DEFAULT
             it.setAutoCancel(true)
@@ -269,6 +374,7 @@ internal class SstpVpnService : VpnService() {
         scope.cancel()
 
         setRootState(false)
+        SmartConnect.onSessionClosed(prefs, SmartConnect.sessionToken(prefs))
         prefs.unregisterOnSharedPreferenceChangeListener(listener)
     }
 }

@@ -38,6 +38,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 
 internal class Controller(internal val bridge: SharedBridge) {
+    /** State changes from a controller that is already shutting down must not win. */
+    private val smartSession = SmartConnect.sessionToken(bridge.prefs)
+
     private var observer: NetworkObserver? = null
 
     private var sstpClient: SstpClient? = null
@@ -56,12 +59,20 @@ internal class Controller(internal val bridge: SharedBridge) {
 
     private val mutex = Mutex()
 
-    private val isReconnectionEnabled = getBooleanPrefValue(OscPrefKey.RECONNECTION_ENABLED, bridge.prefs)
+    // Smart connect keeps retrying with a bounded ladder even when the legacy
+    // reconnection setting is off, because it is the feature that makes a flaky
+    // server usable without user interaction.
+    private val isReconnectionEnabled: Boolean
+        get() = getBooleanPrefValue(OscPrefKey.RECONNECTION_ENABLED, bridge.prefs) ||
+            SmartConnect.isFallbackEnabled(bridge.prefs)
+
     private val isReconnectionAvailable: Boolean
-        get() = getIntPrefValue(OscPrefKey.RECONNECTION_LIFE, bridge.prefs) > 0
+        get() = getIntPrefValue(OscPrefKey.RECONNECTION_LIFE, bridge.prefs) > 0 ||
+            SmartConnect.isFallbackEnabled(bridge.prefs)
 
     private fun attachHandler() {
         bridge.handler = CoroutineExceptionHandler { _, throwable ->
+            SmartConnect.noteFailure(bridge.prefs, "UNEXPECTED", throwable.javaClass.simpleName)
             kill(isReconnectionEnabled) {
                 val header = "OSC: ERR_UNEXPECTED"
                 bridge.service.logWriter?.report(header + "\n" + throwable.stackTraceToString())
@@ -208,6 +219,15 @@ internal class Controller(internal val bridge: SharedBridge) {
                 resetReconnectionLife(bridge.prefs)
             }
 
+            SmartConnect.onConnected(
+                bridge.prefs,
+                bridge.PPP_MTU,
+                bridge.currentAuth,
+                runCatching { bridge.sslTerminal?.getSession()?.protocol }.getOrNull().orEmpty(),
+                runCatching { bridge.sslTerminal?.getSession()?.cipherSuite }.getOrNull().orEmpty(),
+            )
+            bridge.service.onConnected()
+
 
             expectProceeded(Where.SSTP_CONTROL, null) // wait ERR_ message until disconnection
         }
@@ -227,6 +247,8 @@ internal class Controller(internal val bridge: SharedBridge) {
 
             return true
         }
+
+        SmartConnect.noteFailure(bridge.prefs, received.from.name, received.result.name)
 
         val lastPacketType = if (received.result == Result.ERR_DISCONNECT_REQUESTED) {
             SSTP_MESSAGE_TYPE_CALL_DISCONNECT_ACK
@@ -272,6 +294,12 @@ internal class Controller(internal val bridge: SharedBridge) {
             if (isReconnectionRequested && isReconnectionAvailable) {
                 bridge.service.launchJobReconnect()
             } else {
+                if (isReconnectionRequested) {
+                    SmartConnect.giveUp(bridge.prefs, smartSession)
+                } else {
+                    SmartConnect.onDisconnected(bridge.prefs, smartSession)
+                }
+
                 bridge.service.close()
             }
         }

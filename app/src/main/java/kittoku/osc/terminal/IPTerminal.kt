@@ -2,6 +2,7 @@ package kittoku.osc.terminal
 
 import android.os.ParcelFileDescriptor
 import kittoku.osc.ControlMessage
+import kittoku.osc.R
 import kittoku.osc.Result
 import kittoku.osc.SharedBridge
 import kittoku.osc.Where
@@ -76,6 +77,11 @@ internal class IPTerminal(private val bridge: SharedBridge) {
         if (doEnableAppBasedRule) {
             addAppBasedRules()
         }
+
+        // Name the session after the endpoint so the system VPN dialog and the
+        // status bar explain which server is in use.
+        val hostname = getStringPrefValue(OscPrefKey.HOME_HOSTNAME, bridge.prefs).ifBlank { "VPN" }
+        bridge.builder.setSession("${bridge.service.getString(R.string.app_name)} · $hostname")
 
         bridge.builder.setMtu(bridge.PPP_MTU)
         bridge.builder.setBlocking(true)

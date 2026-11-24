@@ -4,10 +4,13 @@ import android.app.Activity
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult
+import androidx.appcompat.app.AlertDialog
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import kittoku.osc.R
+import kittoku.osc.control.SmartConnect
 import kittoku.osc.activity.BLANK_ACTIVITY_TYPE_APPS
 import kittoku.osc.activity.BlankActivity
 import kittoku.osc.activity.EXTRA_KEY_TYPE
@@ -23,6 +26,14 @@ internal class SettingFragment : PreferenceFragmentCompat() {
     private lateinit var certDirPref: DirectoryPreference
     private lateinit var logDirPref: DirectoryPreference
     private lateinit var selectAppsPref: RouteSelectedAppsPreference
+
+    private var tuningPref: Preference? = null
+
+    private val smartListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == null || key.startsWith("smart.") || key.startsWith("SMART_")) {
+            updateTuningSummary()
+        }
+    }
 
     private val certDirLauncher = registerForActivityResult(StartActivityForResult()) { result ->
         val uri = if (result.resultCode == Activity.RESULT_OK) result.data?.data?.also {
@@ -63,6 +74,47 @@ internal class SettingFragment : PreferenceFragmentCompat() {
         setCertDirListener()
         setLogDirListener()
         setSelectAppsListener()
+        setSmartListeners()
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        prefs.registerOnSharedPreferenceChangeListener(smartListener)
+        updateTuningSummary()
+    }
+
+    override fun onPause() {
+        prefs.unregisterOnSharedPreferenceChangeListener(smartListener)
+
+        super.onPause()
+    }
+
+    private fun setSmartListeners() {
+        tuningPref = findPreference("smart_tuning_status")
+
+        findPreference<Preference>("smart_reset")?.onPreferenceClickListener = Preference.OnPreferenceClickListener {
+            AlertDialog.Builder(requireContext())
+                .setTitle(R.string.smart_reset)
+                .setMessage("Endpoint statistics and the remembered strategy will be cleared. Your settings are kept.")
+                .setPositiveButton(R.string.action_reset) { _, _ ->
+                    SmartConnect.resetLearned(prefs)
+                    updateTuningSummary()
+                    Toast.makeText(requireContext(), R.string.toast_stats_reset, Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton(R.string.action_cancel, null)
+                .show()
+
+            true
+        }
+
+        updateTuningSummary()
+    }
+
+    private fun updateTuningSummary() {
+        if (!isAdded) return
+
+        tuningPref?.summary = SmartConnect.tuningSummary(requireContext(), prefs)
     }
 
     private fun setCertDirListener() {

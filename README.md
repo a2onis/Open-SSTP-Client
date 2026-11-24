@@ -8,10 +8,11 @@ You can download and install the latest version via [Google Play](https://play.g
 Some of previous versions are released as apk file on [the releases page](https://github.com/kittoku/Open-SSTP-Client/releases).
 
 ## Usage
-Enter `Host`, `Username` and `Password` preferences and turn the switch on. If a key icon gets to show on
-the right side of the status bar, establishing a VPN connection has been succeeded. To disconnect
-the connection, turn the switch off in the home tab or tap the notification. You can save/load the
-profile from the upper-right option menu.
+Enter `Host`, `Username` and `Password`, then press **Connect** on the connection card. If a key icon
+appears on the right side of the status bar, establishing a VPN connection has been succeeded. To
+disconnect, press **Disconnect** on the card, use the quick settings tile or tap the notification.
+**Best server** applies and connects the saved configuration with the best history in one tap.
+Configurations can be saved/loaded from the upper-right option menu.
 <br>
 <img src="images/example_home.png" width=20%>
 <img src="images/example_setting_1.png" width=20%>
@@ -70,10 +71,70 @@ I don't have Windows Server OS. So I don't officially support accessing to it, b
 ## License
 Licensed under MIT. Be sure you use this software at your own risk.
 
-## Configurations and appearance
+## Smart connect, performance and appearance
 
-Use **Configurations** in the menu to add, load, edit, delete, and test saved
-profiles. New profiles copy the current advanced settings; editing changes the
+### Home screen
+
+The home screen opens with a connection card that shows the tunnel state, the
+active endpoint, the session timer, the negotiated TLS version, the assigned
+address and the tunnel MTU. The card is the only place that needs to be tapped
+to connect or disconnect; credentials and the configuration list sit below it and
+the full session details (routes, DNS, certificate parameters) stay in the
+`Session` section. Theme, tab and card colours follow Material 3 in light and
+dark mode, and the layout draws edge to edge with the status bar and navigation
+bar insets applied to the app bar and the content.
+
+### Smart connect
+
+**Settings → Smart connect** tunes the client to the current network and keeps a
+per-endpoint history so a later session starts from what already worked:
+
+* **Match MTU to the network** sizes the tunnel from the underlying network's
+  path MTU (`LinkProperties.mtu`) minus the outer IP/TCP, TLS, SSTP and PPP
+  overhead (60 bytes). A 1500 byte link therefore gets a 1440 byte tunnel MTU, a
+  1420 byte LTE link gets 1360 and so on. Advertising the link MTU itself makes
+  TCP segment into fragments and is a common cause of slow, stalling tunnels.
+  A manually configured MRU/MTU is never raised; the smaller value wins.
+  The automatic value is applied to the VPN builder, to the LCP MRU option and
+  to the tun read size, and it is shown in the `Session` details.
+* **Automatic fallback** retries a failed connection with a bounded ladder of
+  settings changes instead of giving up: the alternate PPP authentication
+  protocol (only protocols the user enabled), a pinned TLS 1.2 handshake, lower
+  MTUs (1400, 1280) and finally the next best saved configuration when
+  **Switch to a better configuration** is enabled. The ladder is ordered by the
+  layer that failed (`SSL`, `SSTP`, `LCP`, `IPCP`, `PAP`, `CHAP` and `EAP`), and it
+  stops after at most six attempts. The user's own MRU/MTU, TLS version and
+  authentication protocols are restored if every attempt fails.
+* **Fast reconnect** replaces the fixed retry interval with exponential backoff
+  (2 s, 4 s, 8 s, 16 s, then 30 s) while a session is down.
+* **Learn per endpoint**: a successful session records the authentication
+  protocol, MTU, handshake time and success/failure counts for the endpoint. The
+  next connection replays the remembered protocol and MTU, and the recorded
+  score ranks saved configurations. **Connection quality** in the menu shows the
+  full history, and **Forget learned settings** clears it.
+
+Fallback only changes settings the user already allowed (it never enables a
+disabled authentication protocol), it never edits saved profiles, and it writes
+its state to `smart.*` keys in the default preferences, which are neither
+exported with a profile nor reset by **Reload Defaults**.
+
+### Transport tuning
+
+The TLS transport is tuned for a userspace tunnel: `TCP_NODELAY` is enabled to
+remove Nagle latency for interactive traffic, keep-alive is on, socket send and
+receive buffers are raised to 128 KiB, TCP connects are bounded by a 12 s
+timeout and the proxy/HTTP response phases get a 10 s budget. Reads use a 1 s
+timeout so the SSTP and PPP echo timers, the network observer and coroutine
+cancellation run during idle periods; an idle or half-open tunnel is therefore
+detected and reconnected instead of hanging forever, and a peer close is
+reported as an error rather than a negative buffer length.
+
+### Configurations and appearance
+
+Use **Configurations** in the menu to add, connect, load, edit, delete, and test saved
+profiles. The list ranks saved configurations by their recorded quality and each
+entry shows the endpoint plus its success count and best handshake time; the
+**Connect to best configuration** action applies the highest ranked one. New profiles copy the current advanced settings; editing changes the
 name, endpoint and credentials while retaining the other settings. Load a profile
 before connecting. The connection test attempts one TCP connection to the
 specified host and port and reports elapsed time, not ICMP ping, SSTP

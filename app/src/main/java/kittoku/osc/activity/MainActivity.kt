@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
@@ -15,6 +16,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceFragmentCompat
@@ -25,11 +30,13 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 import com.google.android.material.tabs.TabLayoutMediator
 import kittoku.osc.BuildConfig
 import kittoku.osc.R
+import kittoku.osc.control.SmartConnect
 import kittoku.osc.databinding.ActivityMainBinding
 import kittoku.osc.extension.firstEditText
 import kittoku.osc.extension.sum
 import kittoku.osc.fragment.HomeFragment
 import kittoku.osc.fragment.SettingFragment
+import kittoku.osc.preference.ACTIVE_PROFILE_KEY
 import kittoku.osc.preference.OscPrefKey
 import kittoku.osc.preference.PROFILE_KEY_HEADER
 import kittoku.osc.preference.accessor.getStringPrefValue
@@ -43,9 +50,10 @@ import java.io.BufferedOutputStream
 
 class MainActivity : AppCompatActivity() {
     private lateinit var prefs: SharedPreferences
+    private lateinit var binding: ActivityMainBinding
 
-    private lateinit var homeFragment: PreferenceFragmentCompat
-    private lateinit var settingFragment: PreferenceFragmentCompat
+    private lateinit var homeFragment: HomeFragment
+    private lateinit var settingFragment: SettingFragment
 
     private val dialogResource: Int by lazy { EditTextPreference(this).dialogLayoutResource }
 
@@ -55,6 +63,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         updatePreferenceView()
+
+        if (result.data?.getBooleanExtra(EXTRA_AUTO_CONNECT, false) == true) {
+            val home = (supportFragmentManager.findFragmentByTag("f0") as? HomeFragment) ?: homeFragment
+            home.connectNow()
+        }
     }
 
     private val importLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -91,6 +104,10 @@ class MainActivity : AppCompatActivity() {
         profileLauncher.launch(Intent(this, BlankActivity::class.java).putExtra(EXTRA_KEY_TYPE, BLANK_ACTIVITY_TYPE_PROFILES))
     }
 
+    fun openSettings() {
+        binding.pager.currentItem = 1
+    }
+
     private fun updatePreferenceView() {
         listOf(0 to homeFragment, 1 to settingFragment).forEach { (index, original) ->
             val fragment = (supportFragmentManager.findFragmentByTag("f$index") as? PreferenceFragmentCompat) ?: original
@@ -115,10 +132,15 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         AppCompatDelegate.setDefaultNightMode(PreferenceManager.getDefaultSharedPreferences(this).getInt("app_theme", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM))
         super.onCreate(savedInstanceState)
-        title = "${getString(R.string.app_name)}: ${BuildConfig.VERSION_NAME}"
-        val binding = ActivityMainBinding.inflate(layoutInflater)
-        binding.root.fitsSystemWindows = true
+
+        binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        setSupportActionBar(binding.toolbar)
+        supportActionBar?.title = getString(R.string.app_name)
+        supportActionBar?.subtitle = "v${BuildConfig.VERSION_NAME}"
+
+        applyEdgeToEdge()
 
         prefs = PreferenceManager.getDefaultSharedPreferences(this)
         homeFragment = HomeFragment()
@@ -138,20 +160,50 @@ class MainActivity : AppCompatActivity() {
             binding.pager.adapter = it
         }
 
-
         TabLayoutMediator(binding.tabBar, binding.pager) { tab, position ->
-            tab.text = when (position) {
-                0 -> "HOME"
-                1 -> "SETTING"
+            when (position) {
+                0 -> {
+                    tab.setText(R.string.tab_home)
+                    tab.setIcon(R.drawable.ic_home_24)
+                }
+
+                1 -> {
+                    tab.setText(R.string.tab_settings)
+                    tab.setIcon(R.drawable.ic_tune_24)
+                }
+
                 else -> throw NotImplementedError(position.toString())
             }
         }.attach()
-
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
             }
+        }
+    }
+
+    /** Draws behind the system bars and pads the app bar and content instead. */
+    private fun applyEdgeToEdge() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        val isNight = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !isNight
+            isAppearanceLightNavigationBars = !isNight
+        }
+
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
+
+            view.updatePadding(left = bars.left, right = bars.right)
+            binding.appBar.updatePadding(top = bars.top)
+            binding.pager.updatePadding(bottom = bars.bottom)
+
+            insets
         }
     }
 
@@ -176,6 +228,8 @@ class MainActivity : AppCompatActivity() {
             R.id.reload_defaults -> showReloadDialog()
 
             R.id.app_theme -> showThemeDialog()
+
+            R.id.connection_quality -> showQualityDialog()
         }
 
         return true
@@ -184,12 +238,27 @@ class MainActivity : AppCompatActivity() {
     private fun showThemeDialog() {
         val modes = intArrayOf(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM, AppCompatDelegate.MODE_NIGHT_NO, AppCompatDelegate.MODE_NIGHT_YES)
         val selected = modes.indexOf(prefs.getInt("app_theme", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)).coerceAtLeast(0)
-        AlertDialog.Builder(this).setTitle("Theme")
+        AlertDialog.Builder(this).setTitle(R.string.menu_theme)
             .setSingleChoiceItems(arrayOf("System default", "Light", "Dark"), selected) { dialog, which ->
                 prefs.edit().putInt("app_theme", modes[which]).apply()
                 dialog.dismiss()
                 AppCompatDelegate.setDefaultNightMode(modes[which])
-            }.setNegativeButton("Cancel", null).show()
+            }.setNegativeButton(R.string.action_cancel, null).show()
+    }
+
+    private fun showQualityDialog() {
+        val summary = SmartConnect.statsSummary(prefs)
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.dialog_quality_title)
+            .setMessage(summary)
+            .setPositiveButton(R.string.action_close, null)
+            .setNeutralButton(R.string.action_reset) { _, _ ->
+                SmartConnect.resetLearned(prefs)
+                Toast.makeText(this, R.string.toast_stats_reset, Toast.LENGTH_SHORT).show()
+                updatePreferenceView()
+            }
+            .show()
     }
 
     private fun showSaveDialog() {
@@ -211,11 +280,10 @@ class MainActivity : AppCompatActivity() {
             ))
 
             it.setPositiveButton("SAVE") { _, _ ->
+                val name = editText.text.ifEmpty { hostname }
                 prefs.edit().also { editor ->
-                    editor.putString(
-                        PROFILE_KEY_HEADER + editText.text.ifEmpty { hostname },
-                        serializeProfile(prefs)
-                    )
+                    editor.putString(PROFILE_KEY_HEADER + name, serializeProfile(prefs))
+                    editor.putString(ACTIVE_PROFILE_KEY, name)
                     editor.apply()
                 }
 
@@ -252,6 +320,7 @@ class MainActivity : AppCompatActivity() {
 
             it.setPositiveButton("YES") { _, _ ->
                 importProfile(null, prefs)
+                prefs.edit().remove(ACTIVE_PROFILE_KEY).apply()
 
                 updatePreferenceView()
 
