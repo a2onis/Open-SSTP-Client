@@ -25,7 +25,8 @@ class SmartTuningTest {
         assertEquals(1440, effectiveMtu(1500, 1440, true))
         assertEquals(1200, effectiveMtu(1200, 1440, true))
         assertEquals(1500, effectiveMtu(1500, 1440, false))
-        assertEquals(1440, effectiveMtu(1500, 4000, true))
+        // A tuned value above the configured MTU is clamped by the user setting.
+        assertEquals(1500, effectiveMtu(1500, 4000, true))
     }
 
     @Test
