@@ -248,7 +248,7 @@ internal class SstpVpnService : VpnService() {
                 it.setShowBadge(false)
             }
 
-            arrayOf(
+            listOf(
                 NotificationChannel(NOTIFICATION_ERROR_CHANNEL, "Errors", NotificationManager.IMPORTANCE_DEFAULT),
                 NotificationChannel(NOTIFICATION_RECONNECT_CHANNEL, "Reconnection", NotificationManager.IMPORTANCE_LOW),
                 tunnel,
@@ -325,7 +325,8 @@ internal class SstpVpnService : VpnService() {
         refreshForeground()
 
         val endpoint = SmartConnect.endpoint(prefs)
-        logWriter?.report("Connected to $endpoint (MTU ${SmartConnect.activeMtu(prefs)})")
+        val message = "Connected to $endpoint (MTU ${SmartConnect.activeMtu(prefs)})"
+        scope.launch { logWriter?.report(message) }
     }
 
     internal fun notifyMessage(message: String, id: Int, channel: String) {

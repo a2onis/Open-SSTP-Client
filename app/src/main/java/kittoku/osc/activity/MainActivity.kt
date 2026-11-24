@@ -280,7 +280,7 @@ class MainActivity : AppCompatActivity() {
             ))
 
             it.setPositiveButton("SAVE") { _, _ ->
-                val name = editText.text.ifEmpty { hostname }
+                val name = editText.text.toString().ifEmpty { hostname }
                 prefs.edit().also { editor ->
                     editor.putString(PROFILE_KEY_HEADER + name, serializeProfile(prefs))
                     editor.putString(ACTIVE_PROFILE_KEY, name)
