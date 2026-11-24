@@ -29,9 +29,11 @@ internal class SettingFragment : PreferenceFragmentCompat() {
 
     private var tuningPref: Preference? = null
 
+    // The VPN service writes these keys from a background thread, so the summary
+    // is refreshed on the main thread only.
     private val smartListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == null || key.startsWith("smart.") || key.startsWith("SMART_")) {
-            updateTuningSummary()
+            view?.post { updateTuningSummary() }
         }
     }
 

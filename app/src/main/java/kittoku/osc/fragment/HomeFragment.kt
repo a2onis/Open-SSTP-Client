@@ -59,16 +59,22 @@ class HomeFragment : PreferenceFragmentCompat() {
         }
     }
 
+    // Listener callbacks run on the thread that wrote the preference, which is often
+    // the VPN service, so every UI touch is posted to the main thread first.
     private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (!isAdded) return@OnSharedPreferenceChangeListener
+        val root = view ?: return@OnSharedPreferenceChangeListener
 
-        updateCard()
+        root.post {
+            if (!isAdded) return@post
 
-        if (key == null || key == ACTIVE_PROFILE_KEY ||
-            key == OscPrefKey.HOME_HOSTNAME.name || key == OscPrefKey.HOME_USERNAME.name ||
-            key == OscPrefKey.HOME_PASSWORD.name || key == OscPrefKey.SSL_PORT.name
-        ) {
-            updatePreferenceSummaries()
+            updateCard()
+
+            if (key == null || key == ACTIVE_PROFILE_KEY ||
+                key == OscPrefKey.HOME_HOSTNAME.name || key == OscPrefKey.HOME_USERNAME.name ||
+                key == OscPrefKey.HOME_PASSWORD.name || key == OscPrefKey.SSL_PORT.name
+            ) {
+                updatePreferenceSummaries()
+            }
         }
     }
 
@@ -299,8 +305,17 @@ class HomeFragment : PreferenceFragmentCompat() {
 
         inflated.detailText.text = when {
             hostname.isBlank() -> getString(R.string.hero_hint_no_host)
-            state == SmartState.RETRYING ->
-                SmartConnect.detail(prefs).ifBlank { getString(R.string.status_retrying) }
+            state == SmartState.RETRYING -> {
+                val base = SmartConnect.detail(prefs).ifBlank { getString(R.string.status_retrying) }
+                val retryAt = SmartConnect.retryAt(prefs)
+                val seconds = if (retryAt > 0) {
+                    ((retryAt - System.currentTimeMillis()) / 1_000L + 1).coerceAtLeast(0)
+                } else {
+                    0
+                }
+
+                if (seconds > 0) "$base · retry in ${seconds}s" else base
+            }
             active && state == SmartState.CONNECTED ->
                 SmartConnect.sessionSummary(prefs).ifBlank { getString(R.string.status_connected) }
             active -> "Negotiating with $endpoint"
