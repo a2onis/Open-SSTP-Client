@@ -3,13 +3,19 @@ package kittoku.osc.preference.custom
 import android.content.Context
 import android.util.AttributeSet
 import androidx.preference.SwitchPreferenceCompat
+import kittoku.osc.R
 import kittoku.osc.preference.OscPrefKey
 import kittoku.osc.preference.accessor.getBooleanPrefValue
 
 
 internal abstract class SwitchPreference(context: Context, attrs: AttributeSet) : SwitchPreferenceCompat(context, attrs), OscPreference {
     override fun updateView() {
-        isChecked = getBooleanPrefValue(oscPrefKey, sharedPreferences!!)
+        val value = getBooleanPrefValue(oscPrefKey, sharedPreferences!!)
+
+        // Writing an unchanged value would re-notify preference listeners.
+        if (isChecked != value) {
+            isChecked = value
+        }
     }
 
     override fun onAttached() {
@@ -87,4 +93,34 @@ internal class LogDoSaveLogPreference(context: Context, attrs: AttributeSet) : S
     override val oscPrefKey = OscPrefKey.LOG_DO_SAVE_LOG
     override val parentKey: OscPrefKey? = null
     override val preferenceTitle = "Save Log"
+}
+
+internal class SmartConnectEnabledPreference(context: Context, attrs: AttributeSet) : SwitchPreference(context, attrs) {
+    override val oscPrefKey = OscPrefKey.SMART_CONNECT_ENABLED
+    override val parentKey: OscPrefKey? = null
+    override val preferenceTitle = context.getString(R.string.smart_connect_enabled)
+}
+
+internal class SmartAutoMtuPreference(context: Context, attrs: AttributeSet) : SwitchPreference(context, attrs) {
+    override val oscPrefKey = OscPrefKey.SMART_AUTO_MTU
+    override val parentKey = OscPrefKey.SMART_CONNECT_ENABLED
+    override val preferenceTitle = context.getString(R.string.smart_auto_mtu)
+}
+
+internal class SmartAutoFallbackPreference(context: Context, attrs: AttributeSet) : SwitchPreference(context, attrs) {
+    override val oscPrefKey = OscPrefKey.SMART_AUTO_FALLBACK
+    override val parentKey = OscPrefKey.SMART_CONNECT_ENABLED
+    override val preferenceTitle = context.getString(R.string.smart_auto_fallback)
+}
+
+internal class SmartAutoEndpointPreference(context: Context, attrs: AttributeSet) : SwitchPreference(context, attrs) {
+    override val oscPrefKey = OscPrefKey.SMART_AUTO_ENDPOINT
+    override val parentKey = OscPrefKey.SMART_CONNECT_ENABLED
+    override val preferenceTitle = context.getString(R.string.smart_auto_endpoint)
+}
+
+internal class SmartFastReconnectPreference(context: Context, attrs: AttributeSet) : SwitchPreference(context, attrs) {
+    override val oscPrefKey = OscPrefKey.SMART_FAST_RECONNECT
+    override val parentKey = OscPrefKey.SMART_CONNECT_ENABLED
+    override val preferenceTitle = context.getString(R.string.smart_fast_reconnect)
 }

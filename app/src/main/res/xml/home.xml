@@ -1,14 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
-    <kittoku.osc.preference.custom.HomeHostnamePreference android:key="HOME_HOSTNAME"/>
-    <kittoku.osc.preference.custom.HomeUsernamePreference android:key="HOME_USERNAME"/>
-    <kittoku.osc.preference.custom.HomePasswordPreference android:key="HOME_PASSWORD"/>
-    <kittoku.osc.preference.custom.HomeConnectorPreference android:key="HOME_CONNECTOR" />
 
-    <Preference android:key="manage_configurations" android:title="Configurations"
-        android:summary="Select, manage, and find configurations" />
+    <PreferenceCategory android:title="Configuration">
+        <kittoku.osc.preference.custom.HomeHostnamePreference
+            android:key="HOME_HOSTNAME"
+            android:icon="@drawable/ic_cloud_24" />
 
-    <PreferenceCategory>
-        <kittoku.osc.preference.custom.HomeStatusPreference android:key="HOME_STATUS"/>
+        <kittoku.osc.preference.custom.HomeUsernamePreference
+            android:key="HOME_USERNAME"
+            android:icon="@drawable/ic_person_24" />
+
+        <kittoku.osc.preference.custom.HomePasswordPreference
+            android:key="HOME_PASSWORD"
+            android:icon="@drawable/ic_lock_24" />
+
+        <Preference
+            android:key="manage_configurations"
+            android:title="Configurations"
+            android:icon="@drawable/ic_list_24" />
     </PreferenceCategory>
+
+    <PreferenceCategory android:title="Smart connect">
+        <Preference
+            android:key="smart_overview"
+            android:title="@string/smart_overview"
+            android:icon="@drawable/ic_speed_24" />
+    </PreferenceCategory>
+
+    <PreferenceCategory android:title="Session">
+        <kittoku.osc.preference.custom.HomeStatusPreference android:key="HOME_STATUS" />
+    </PreferenceCategory>
+
 </PreferenceScreen>

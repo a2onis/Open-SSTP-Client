@@ -14,7 +14,11 @@ internal abstract class ModifiedDropDownPreference(context: Context, attrs: Attr
     protected abstract val values: Array<String>
     protected open val names: Array<String>? = null
     override fun updateView() {
-        value = getStringPrefValue(oscPrefKey, sharedPreferences!!)
+        val stored = getStringPrefValue(oscPrefKey, sharedPreferences!!)
+
+        if (value != stored) {
+            value = stored
+        }
     }
 
     override fun onAttached() {

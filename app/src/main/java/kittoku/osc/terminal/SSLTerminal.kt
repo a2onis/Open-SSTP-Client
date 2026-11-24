@@ -33,8 +33,10 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.yield
 import java.io.BufferedInputStream
+import java.io.EOFException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
@@ -58,6 +60,28 @@ private const val HTTP_DELIMITER = "\r\n"
 private const val HTTP_SUFFIX = "\r\n\r\n"
 
 internal const val SSL_REQUEST_INTERVAL = 10_000L
+
+/** Bounded TCP connect keeps a black-holed host from hanging the connect screen. */
+private const val SOCKET_CONNECT_TIMEOUT_MS = 12_000
+
+/**
+ * Short read timeout. Waiting 1 s at a time lets the echo timers, the network
+ * observer and coroutine cancellation run even when the peer is silent, which
+ * turns a stalled tunnel into an automatic reconnect instead of a dead session.
+ */
+private const val SOCKET_READ_TIMEOUT_MS = 1_000
+
+/** Budget for the proxy CONNECT and the SSTP_DUPLEX_POST response. */
+private const val HTTP_RESPONSE_TIMEOUT_MS = 10_000L
+
+/**
+ * Explicitly sized socket buffers keep the TCP window open on high latency
+ * links; without them the default is often too small for a 1440 byte MSS.
+ */
+private const val SOCKET_BUFFER_SIZE = 128 * 1024
+
+/** Marker for "the read timed out without receiving a byte". */
+private const val READ_TIMEOUT = -2
 
 internal class SSLTerminal(private val bridge: SharedBridge) {
     private val mutex = Mutex()
@@ -160,7 +184,7 @@ internal class SSLTerminal(private val bridge: SharedBridge) {
 
         val socketHostname = if (doUseProxy) getStringPrefValue(OscPrefKey.PROXY_HOSTNAME, bridge.prefs) else sslHostname
         val socketPort = if (doUseProxy) getIntPrefValue(OscPrefKey.PROXY_PORT, bridge.prefs) else sslPort
-        socket = Socket(socketHostname, socketPort).also {
+        socket = createSocket(socketHostname, socketPort).also {
             socketInputStream = it.getInputStream()
             socketOutputStream = it.getOutputStream()
         }
@@ -231,6 +255,24 @@ internal class SSLTerminal(private val bridge: SharedBridge) {
         }
     }
 
+    /**
+     * Creates a tuned socket: latency first (Nagle disabled, keep-alive on),
+     * throughput second (large buffers), and never an unbounded connect.
+     */
+    private fun createSocket(hostname: String, port: Int): Socket {
+        val tuned = Socket()
+
+        tuned.tcpNoDelay = true
+        tuned.keepAlive = true
+        runCatching { tuned.sendBufferSize = SOCKET_BUFFER_SIZE }
+        runCatching { tuned.receiveBufferSize = SOCKET_BUFFER_SIZE }
+
+        tuned.connect(InetSocketAddress(hostname, port), SOCKET_CONNECT_TIMEOUT_MS)
+        tuned.soTimeout = SOCKET_READ_TIMEOUT_MS
+
+        return tuned
+    }
+
     private suspend fun establishProxy(): Boolean {
         val username = getStringPrefValue(OscPrefKey.PROXY_USERNAME, bridge.prefs)
         val password = getStringPrefValue(OscPrefKey.PROXY_PASSWORD, bridge.prefs)
@@ -254,11 +296,33 @@ internal class SSLTerminal(private val bridge: SharedBridge) {
         socketOutputStream.flush()
 
         var response = ""
+        val deadline = System.currentTimeMillis() + HTTP_RESPONSE_TIMEOUT_MS
         while (true) {
-            response += socketInputStream.read().toChar()
+            val next = try {
+                socketInputStream.read()
+            } catch (_: SocketTimeoutException) {
+                if (System.currentTimeMillis() > deadline) {
+                    bridge.controlMailbox.send(ControlMessage(Where.PROXY, Result.ERR_TIMEOUT))
+                    return false
+                }
+
+                continue
+            }
+
+            if (next < 0) {
+                bridge.controlMailbox.send(ControlMessage(Where.PROXY, Result.ERR_UNEXPECTED_MESSAGE))
+                return false
+            }
+
+            response += next.toChar()
 
             if (response.endsWith(HTTP_SUFFIX)) {
                 break
+            }
+
+            if (System.currentTimeMillis() > deadline) {
+                bridge.controlMailbox.send(ControlMessage(Where.PROXY, Result.ERR_TIMEOUT))
+                return false
             }
         }
 
@@ -296,6 +360,7 @@ internal class SSLTerminal(private val bridge: SharedBridge) {
         buffer.limit(0)
 
         var response = ""
+        val deadline = System.currentTimeMillis() + HTTP_RESPONSE_TIMEOUT_MS
         outer@ while (true) {
             receive(buffer)
 
@@ -306,6 +371,11 @@ internal class SSLTerminal(private val bridge: SharedBridge) {
                     break@outer
                 }
             }
+
+            if (System.currentTimeMillis() > deadline) {
+                bridge.controlMailbox.send(ControlMessage(Where.SSL, Result.ERR_TIMEOUT))
+                return false
+            }
         }
 
         if (!response.split(HTTP_DELIMITER)[0].contains("200")) {
@@ -314,7 +384,6 @@ internal class SSLTerminal(private val bridge: SharedBridge) {
         }
 
 
-        socket!!.soTimeout = 1_000
         bridge.service.protect(socket)
         return true
     }
@@ -399,7 +468,7 @@ internal class SSLTerminal(private val bridge: SharedBridge) {
         var startPayload: Int
         var result: SSLEngineResult
 
-        while (true) {
+        receiveLoop@ while (true) {
             startPayload = buffer.position()
             buffer.position(buffer.limit())
             buffer.limit(buffer.capacity())
@@ -408,7 +477,7 @@ internal class SSLTerminal(private val bridge: SharedBridge) {
 
             when (result.status) {
                 SSLEngineResult.Status.OK -> {
-                    break
+                    break@receiveLoop
                 }
 
                 SSLEngineResult.Status.BUFFER_OVERFLOW -> {
@@ -424,15 +493,27 @@ internal class SSLTerminal(private val bridge: SharedBridge) {
 
                     inboundBuffer.slide()
 
-                    try {
-                        val readSize = socketInputStream.read(
+                    val readSize = try {
+                        socketInputStream.read(
                             inboundBuffer.array(),
                             inboundBuffer.limit(),
                             inboundBuffer.capacityAfterLimit
                         )
+                    } catch (_: SocketTimeoutException) {
+                        READ_TIMEOUT
+                    }
 
-                        inboundBuffer.limit(inboundBuffer.limit() + readSize)
-                    } catch (_: SocketTimeoutException) { }
+                    if (readSize == READ_TIMEOUT) {
+                        // Hand control back to the caller: echo timers, the network
+                        // observer and cancellation now run during idle periods.
+                        break@receiveLoop
+                    }
+
+                    if (readSize < 0) {
+                        throw EOFException("The peer closed the TLS connection")
+                    }
+
+                    inboundBuffer.limit(inboundBuffer.limit() + readSize)
                 }
 
                 else -> {

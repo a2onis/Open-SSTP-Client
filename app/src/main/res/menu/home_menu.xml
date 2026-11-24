@@ -1,23 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
-<menu xmlns:android="http://schemas.android.com/apk/res/android">
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
         android:id="@+id/load_profile"
-        android:title="Configurations"/>
+        android:icon="@drawable/ic_list_24"
+        android:title="Configurations"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/connection_quality"
+        android:icon="@drawable/ic_stats_24"
+        android:title="@string/menu_quality"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/app_theme"
+        android:icon="@drawable/ic_theme_24"
+        android:title="@string/menu_theme"
+        app:showAsAction="never" />
 
     <item
         android:id="@+id/save_profile"
+        android:icon="@drawable/ic_save_24"
         android:title="Save Profile" />
 
     <item
         android:id="@+id/import_profile"
+        android:icon="@drawable/ic_download_24"
         android:title="Import Profile" />
 
     <item
         android:id="@+id/export_profile"
+        android:icon="@drawable/ic_upload_24"
         android:title="Export Profile" />
 
     <item
         android:id="@+id/reload_defaults"
+        android:icon="@drawable/ic_refresh_24"
         android:title="Reload Defaults" />
-    <item android:id="@+id/app_theme" android:title="Theme" />
 </menu>

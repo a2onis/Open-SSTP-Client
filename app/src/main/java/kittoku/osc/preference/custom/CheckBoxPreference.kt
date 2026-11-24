@@ -9,7 +9,11 @@ import kittoku.osc.preference.accessor.getBooleanPrefValue
 
 internal abstract class ModifiedCheckBoxPreference(context: Context, attrs: AttributeSet) : CheckBoxPreference(context, attrs), OscPreference {
     override fun updateView() {
-        isChecked = getBooleanPrefValue(oscPrefKey, sharedPreferences!!)
+        val value = getBooleanPrefValue(oscPrefKey, sharedPreferences!!)
+
+        if (isChecked != value) {
+            isChecked = value
+        }
     }
 
     override fun onAttached() {

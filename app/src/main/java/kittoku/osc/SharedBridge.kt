@@ -1,6 +1,7 @@
 package kittoku.osc
 
 import androidx.preference.PreferenceManager
+import kittoku.osc.control.SmartConnect
 import kittoku.osc.preference.AppString
 import kittoku.osc.preference.OscPrefKey
 import kittoku.osc.preference.accessor.getBooleanPrefValue
@@ -96,8 +97,8 @@ internal class SharedBridge(internal val service: SstpVpnService) {
 
     internal val HOME_USERNAME = getStringPrefValue(OscPrefKey.HOME_USERNAME, prefs)
     internal val HOME_PASSWORD = getStringPrefValue(OscPrefKey.HOME_PASSWORD, prefs)
-    internal val PPP_MRU = getIntPrefValue(OscPrefKey.PPP_MRU, prefs)
-    internal val PPP_MTU = getIntPrefValue(OscPrefKey.PPP_MTU, prefs)
+    internal val PPP_MTU = SmartConnect.effectiveTunnelMtu(prefs)
+    internal val PPP_MRU = minOf(getIntPrefValue(OscPrefKey.PPP_MRU, prefs), PPP_MTU)
     internal val PPP_AUTH_PROTOCOLS = getSetPrefValue(OscPrefKey.PPP_AUTH_PROTOCOLS, prefs)
     internal val PPP_IPv4_ENABLED = getBooleanPrefValue(OscPrefKey.PPP_IPv4_ENABLED, prefs)
     internal val PPP_IPv6_ENABLED = getBooleanPrefValue(OscPrefKey.PPP_IPv6_ENABLED, prefs)

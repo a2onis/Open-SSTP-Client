@@ -72,6 +72,20 @@ internal class NetworkObserver(val bridge: SharedBridge) {
         }
         summary.add("")
 
+        summary.add("[Tunnel MTU]")
+        summary.add(properties.mtu.toString())
+        summary.add("")
+
+        // Mirror the interesting parts for the home card and the smart engine.
+        val session = runCatching { bridge.sslTerminal?.getSession() }.getOrNull()
+        SmartConnect.noteSession(
+            bridge.prefs,
+            address = properties.linkAddresses.firstOrNull()?.address?.hostAddress ?: "",
+            dns = properties.dnsServers.joinToString(", ") { it.hostAddress ?: "" },
+            tls = runCatching { session?.protocol }.getOrNull(),
+            cipher = runCatching { session?.cipherSuite }.getOrNull(),
+        )
+
         summary.add("[Routing]")
         properties.routes.forEach {
             summary.add(it.toString())
